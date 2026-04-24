@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- net8.0-windows required for WinForms and LibraryImport on Windows -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>JzRE.Editor</AssemblyName>
+    <RootNamespace>JzRE.Editor</RootNamespace>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!--
+      Output to the same directory as JzRE.Runtime.dll so that
+      DefaultDllImportSearchPaths.AssemblyDirectory can locate the native DLL.
+      Relative path from Source\Editor\ -> workspace root -> Binaries\Windows\<cfg>\
+      Build.bat overrides this with its own -o flag, so both paths stay consistent.
+    -->
+    <OutputPath>..\..\Binaries\Windows\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- *.Build.cs files are JzRE.Build module descriptors loaded by the build tool
+         at runtime via Roslyn — they must NOT be compiled into the editor assembly. -->
+    <Compile Remove="Editor.Build.cs" />
+  </ItemGroup>
+</Project>

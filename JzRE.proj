@@ -1,0 +1,11 @@
+{
+  "Name": "JzRE-mix",
+  "Version": { "Major": 0, "Minor": 1, "Revision": 0 },
+  "Description": "Minimal rendering engine inspired by FlaxEngine",
+  "EditorTarget": "JzREEditor",
+  "Configuration": {
+    "UseDirectX11": true,
+    "UseDotNet": true,
+    "Windows": { "UseSDL": false }
+  }
+}

@@ -8,6 +8,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
+    <Configurations>Debug;Develop;Release</Configurations>
+    <Platforms>x64</Platforms>
   </PropertyGroup>
   <ItemGroup>
     <!-- Roslyn for compiling *.Build.cs module files at runtime -->

@@ -1,326 +1,327 @@
-// JzRE.Runtime - Direct3D 11 renderer
+// JzRE.Runtime - bgfx renderer
 // Exposes a flat C API consumed by the C# editor via P/Invoke (NativeRuntime.cs).
-// Architecture: this DLL owns the GPU device and swap chain; the C# side
-// provides only the Win32 HWND to render into.
+// Architecture: this library owns the GPU device; the C# side provides the
+// native window handle (HWND / X11 Window / NSView*) via void*.
 
-// Build.bat / vcxproj pass /DJZRE_RUNTIME_EXPORTS on the command line.
-// The #ifndef guard avoids C4005 "macro redefinition" when that is the case,
-// while still letting IDEs (clangd / IntelliSense) see the correct dllexport
-// declarations when they process this file without the command-line flag.
-#ifndef JZRE_RUNTIME_EXPORTS
-#define JZRE_RUNTIME_EXPORTS
+// The build system passes /DJzRE_RUNTIME_EXPORTS (MSVC) or -DJzRE_RUNTIME_EXPORTS
+// (GCC/Clang) on the command line. The #ifndef guard avoids "macro redefinition"
+// warnings when the flag is already set, while still letting IDEs see the correct
+// dllexport / visibility declaration when processing this file standalone.
+#ifndef JzRE_RUNTIME_EXPORTS
+#define JzRE_RUNTIME_EXPORTS
 #endif
 #include "Renderer.h"
 #include "MeshLoader.h"
 
-// NOMINMAX is passed via compiler /D flag (Build.bat and vcxproj preprocessor definitions)
+#include <bgfx/bgfx.h>
+#include <bgfx/platform.h>
+#include <bx/bx.h>
+#include <bx/math.h>
+
+#if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
-#include <d3d11.h>
-#include <dxgi.h>
-#include <d3dcompiler.h>
-#include <DirectXMath.h>
-#include <wrl/client.h>
+#endif
+#include <cstdarg>
+#include <cstdio>
 #include <string>
 #include <vector>
 
-#pragma comment(lib, "d3d11.lib")
-#pragma comment(lib, "dxgi.lib")
-#pragma comment(lib, "d3dcompiler.lib")
+// ── Vertex layout (matches bgfx shader $input a_position, a_normal) ──────────
 
-using namespace DirectX;
-using Microsoft::WRL::ComPtr;
-
-// ── Inline HLSL shaders ─────────────────────────────────────────────────────
-
-static const char* kShaderSrc = R"(
-cbuffer CB : register(b0)
+struct PosNormalVertex
 {
-    float4x4 mvp;
-    float4x4 model;
-    float3   lightDir;
-    float    _pad;
+    float x, y, z;
+    float nx, ny, nz;
 };
 
-struct VSIn  { float3 pos : POSITION; float3 nrm : NORMAL; };
-struct VSOut { float4 pos : SV_POSITION; float3 nrm : NORMAL0; float3 wpos : TEXCOORD0; };
+static bgfx::VertexLayout g_layout;
 
-VSOut VS(VSIn i)
+static void InitLayout()
 {
-    VSOut o;
-    o.pos  = mul(float4(i.pos, 1.0f), mvp);
-    o.nrm  = mul(float4(i.nrm, 0.0f), model).xyz;
-    o.wpos = mul(float4(i.pos, 1.0f), model).xyz;
-    return o;
+    g_layout.begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Normal,   3, bgfx::AttribType::Float)
+        .end();
 }
-
-float4 PS(VSOut i) : SV_TARGET
-{
-    float3 N      = normalize(i.nrm);
-    float3 L      = normalize(-lightDir);
-    float3 albedo = float3(0.82f, 0.72f, 0.60f);
-    float  diff   = max(dot(N, L), 0.0f);
-    float3 color  = albedo * (0.15f + diff * 0.85f);
-    return float4(color, 1.0f);
-}
-)";
-
-// ── GPU types ───────────────────────────────────────────────────────────────
-
-struct GPUVertex { XMFLOAT3 pos; XMFLOAT3 normal; };
-
-struct alignas(16) ConstantBuffer
-{
-    XMFLOAT4X4 mvp;
-    XMFLOAT4X4 model;
-    XMFLOAT3   lightDir;
-    float      _pad;
-};
 
 // ── Renderer state ───────────────────────────────────────────────────────────
 
-struct RendererState
-{
-    ComPtr<ID3D11Device>           device;
-    ComPtr<ID3D11DeviceContext>    ctx;
-    ComPtr<IDXGISwapChain>         sc;
-    ComPtr<ID3D11RenderTargetView> rtv;
-    ComPtr<ID3D11DepthStencilView> dsv;
-    ComPtr<ID3D11VertexShader>     vs;
-    ComPtr<ID3D11PixelShader>      ps;
-    ComPtr<ID3D11InputLayout>      layout;
-    ComPtr<ID3D11Buffer>           vb, ib, cb;
-    UINT  indexCount = 0;
-    int   width = 1, height = 1;
-    float distance = 5.f, pitch = 0.3f, yaw = 0.f;
-};
+static bgfx::ProgramHandle     g_program    = BGFX_INVALID_HANDLE;
+static bgfx::UniformHandle     g_u_mvp      = BGFX_INVALID_HANDLE;
+static bgfx::UniformHandle     g_u_normalMtx = BGFX_INVALID_HANDLE;
+static bgfx::VertexBufferHandle g_vb        = BGFX_INVALID_HANDLE;
+static bgfx::IndexBufferHandle  g_ib        = BGFX_INVALID_HANDLE;
+static constexpr uint64_t kRenderState =
+      BGFX_STATE_WRITE_RGB
+    | BGFX_STATE_WRITE_A
+    | BGFX_STATE_WRITE_Z
+    | BGFX_STATE_DEPTH_TEST_LESS
+    | BGFX_STATE_MSAA;
 
-static RendererState* g_r   = nullptr;
-static std::string    g_err;
+static int   g_width = 1, g_height = 1;
+static float g_distance = 5.f, g_pitch = 0.3f, g_yaw = 0.f;
+static float g_centerX = 0.f, g_centerY = 0.f, g_centerZ = 0.f;
+static float g_extentX = 0.f, g_extentY = 0.f, g_extentZ = 0.f;
+static uint32_t g_vertexCount = 0, g_indexCount = 0;
+static bool  g_initialized = false;
+static std::string g_err;
 
 static void SetErr(const char* msg) { g_err = msg ? msg : ""; }
 
-// ── Internal helpers ─────────────────────────────────────────────────────────
-
-static bool CreateRTV(RendererState& r)
+// bgfx callback — captures detailed init error messages
+struct ErrorCallback : public bgfx::CallbackI
 {
-    ComPtr<ID3D11Texture2D> buf;
-    if (FAILED(r.sc->GetBuffer(0, __uuidof(ID3D11Texture2D), &buf))) return false;
-    return SUCCEEDED(r.device->CreateRenderTargetView(buf.Get(), nullptr, &r.rtv));
-}
-
-static bool CreateDSV(RendererState& r, int w, int h)
-{
-    D3D11_TEXTURE2D_DESC dd{};
-    dd.Width              = (UINT)w;
-    dd.Height             = (UINT)h;
-    dd.MipLevels          = 1;
-    dd.ArraySize          = 1;
-    dd.Format             = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    dd.SampleDesc.Count   = 1;
-    dd.BindFlags          = D3D11_BIND_DEPTH_STENCIL;
-    ComPtr<ID3D11Texture2D> dt;
-    if (FAILED(r.device->CreateTexture2D(&dd, nullptr, &dt))) return false;
-    return SUCCEEDED(r.device->CreateDepthStencilView(dt.Get(), nullptr, &r.dsv));
-}
-
-static bool CompileShaders(RendererState& r)
-{
-    ComPtr<ID3DBlob> vsBlob, psBlob, errBlob;
-    UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
-
-    if (FAILED(D3DCompile(kShaderSrc, strlen(kShaderSrc), nullptr, nullptr, nullptr,
-                          "VS", "vs_5_0", flags, 0, &vsBlob, &errBlob)))
+    void fatal(const char* _filePath, uint16_t _line, bgfx::Fatal::Enum /*_code*/, const char* _str) override
     {
-        SetErr(errBlob ? (char*)errBlob->GetBufferPointer() : "VS compile failed");
+        if (_str && g_err.empty())
+        {
+            char buf[512];
+            snprintf(buf, sizeof(buf), "%s(%u): %s", _filePath, (unsigned)_line, _str);
+            g_err = buf;
+        }
+    }
+    void traceVargs(const char*, uint16_t, const char*, va_list) override {}
+    void profilerBegin(const char*, uint32_t, const char*, uint16_t) override {}
+    void profilerBeginLiteral(const char*, uint32_t, const char*, uint16_t) override {}
+    void profilerEnd() override {}
+    uint32_t cacheReadSize(uint64_t) override { return 0; }
+    bool cacheRead(uint64_t, void*, uint32_t) override { return false; }
+    void cacheWrite(uint64_t, const void*, uint32_t) override {}
+    void screenShot(const char*, uint32_t, uint32_t, uint32_t, bgfx::TextureFormat::Enum, const void*, uint32_t, bool) override {}
+    void captureBegin(uint32_t, uint32_t, uint32_t, bgfx::TextureFormat::Enum, bool) override {}
+    void captureEnd() override {}
+    void captureFrame(const void*, uint32_t) override {}
+};
+static ErrorCallback g_callback;
+
+// ── Shader loading ───────────────────────────────────────────────────────────
+
+static bgfx::ShaderHandle LoadShader(const char* path)
+{
+    FILE* f = fopen(path, "rb");
+    if (!f) return BGFX_INVALID_HANDLE;
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    std::vector<char> buf(size);
+    fread(buf.data(), 1, size, f);
+    fclose(f);
+
+    const bgfx::Memory* mem = bgfx::copy(buf.data(), uint32_t(size));
+    return bgfx::createShader(mem);
+}
+
+static bgfx::ProgramHandle LoadProgram(const char* vsPath, const char* fsPath)
+{
+    bgfx::ShaderHandle vsh = LoadShader(vsPath);
+    bgfx::ShaderHandle fsh = LoadShader(fsPath);
+
+    if (!bgfx::isValid(vsh) || !bgfx::isValid(fsh))
+    {
+        if (bgfx::isValid(vsh)) bgfx::destroy(vsh);
+        if (bgfx::isValid(fsh)) bgfx::destroy(fsh);
+        SetErr("Failed to load shader binary");
+        return BGFX_INVALID_HANDLE;
+    }
+    return bgfx::createProgram(vsh, fsh, true);
+}
+
+// ── Public API implementation ────────────────────────────────────────────────
+
+bool Renderer_Create(void* nativeWindow, int x, int y, int width, int height)
+{
+    if (g_initialized)
+        return true;
+
+    if (nullptr == nativeWindow)
+    {
+        SetErr("Renderer_Create received a null native window handle");
         return false;
     }
-    if (FAILED(D3DCompile(kShaderSrc, strlen(kShaderSrc), nullptr, nullptr, nullptr,
-                          "PS", "ps_5_0", flags, 0, &psBlob, &errBlob)))
+
+    if (width <= 0 || height <= 0)
     {
-        SetErr(errBlob ? (char*)errBlob->GetBufferPointer() : "PS compile failed");
+        SetErr("Renderer_Create received an invalid render size");
         return false;
     }
 
-    r.device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, &r.vs);
-    r.device->CreatePixelShader( psBlob->GetBufferPointer(), psBlob->GetBufferSize(), nullptr, &r.ps);
+    g_width = width; g_height = height;
 
-    D3D11_INPUT_ELEMENT_DESC elems[] =
+    bgfx::Init init;
+    init.type     = bgfx::RendererType::Direct3D11;
+    init.platformData.nwh = nativeWindow;
+    init.resolution.width  = uint32_t(width);
+    init.resolution.height = uint32_t(height);
+    init.resolution.reset  = BGFX_RESET_VSYNC;
+    init.callback = &g_callback;
+
+    g_err.clear();
+    if (!bgfx::init(init))
     {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,                            D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-    };
-    r.device->CreateInputLayout(elems, 2, vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &r.layout);
-    return true;
-}
-
-// ── Public API implementation ─────────────────────────────────────────────────
-
-bool Renderer_Create(void* hwnd, int width, int height)
-{
-    g_r = new RendererState();
-    g_r->width = width; g_r->height = height;
-
-    DXGI_SWAP_CHAIN_DESC scd{};
-    scd.BufferCount                         = 2;
-    scd.BufferDesc.Width                    = (UINT)width;
-    scd.BufferDesc.Height                   = (UINT)height;
-    scd.BufferDesc.Format                   = DXGI_FORMAT_R8G8B8A8_UNORM;
-    scd.BufferDesc.RefreshRate.Numerator    = 60;
-    scd.BufferDesc.RefreshRate.Denominator  = 1;
-    scd.BufferUsage                         = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    scd.OutputWindow                        = (HWND)hwnd;
-    scd.SampleDesc.Count                    = 1;
-    scd.Windowed                            = TRUE;
-    scd.SwapEffect                          = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-
-    D3D_FEATURE_LEVEL fl;
-    HRESULT hr = D3D11CreateDeviceAndSwapChain(
-        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0,
-        nullptr, 0, D3D11_SDK_VERSION,
-        &scd, &g_r->sc, &g_r->device, &fl, &g_r->ctx);
-
-    if (FAILED(hr))
-    {
-        // Fallback: WARP software device (useful without a discrete GPU)
-        hr = D3D11CreateDeviceAndSwapChain(
-            nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
-            nullptr, 0, D3D11_SDK_VERSION,
-            &scd, &g_r->sc, &g_r->device, &fl, &g_r->ctx);
+        if (g_err.empty()) SetErr("bgfx::init failed");
+        return false;
     }
-    if (FAILED(hr)) { SetErr("D3D11CreateDeviceAndSwapChain failed"); delete g_r; g_r = nullptr; return false; }
 
-    if (!CreateRTV(*g_r) || !CreateDSV(*g_r, width, height) || !CompileShaders(*g_r))
-    { delete g_r; g_r = nullptr; return false; }
+    bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x1a1e26ff, 1.0f, 0);
 
-    // Constant buffer
-    D3D11_BUFFER_DESC cbd{};
-    cbd.ByteWidth      = sizeof(ConstantBuffer);
-    cbd.Usage          = D3D11_USAGE_DYNAMIC;
-    cbd.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
-    cbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-    g_r->device->CreateBuffer(&cbd, nullptr, &g_r->cb);
+    InitLayout();
 
+    // Load pre-compiled shaders (shaderc produces platform-specific .bin files)
+    g_program = LoadProgram("Shaders/vs_basic.bin", "Shaders/fs_basic.bin");
+    if (!bgfx::isValid(g_program))
+    {
+        bgfx::shutdown();
+        return false;
+    }
+
+    g_u_mvp = bgfx::createUniform("u_mvp", bgfx::UniformType::Mat4);
+    g_u_normalMtx = bgfx::createUniform("u_normalMtx", bgfx::UniformType::Mat4);
+
+    g_initialized = true;
     return true;
 }
 
 void Renderer_Destroy()
 {
-    if (g_r) { delete g_r; g_r = nullptr; }
+    if (!g_initialized) return;
+
+    if (bgfx::isValid(g_program))    bgfx::destroy(g_program);
+    if (bgfx::isValid(g_u_mvp))      bgfx::destroy(g_u_mvp);
+    if (bgfx::isValid(g_u_normalMtx)) bgfx::destroy(g_u_normalMtx);
+    if (bgfx::isValid(g_vb))         bgfx::destroy(g_vb);
+    if (bgfx::isValid(g_ib))         bgfx::destroy(g_ib);
+
+    bgfx::shutdown();
+    g_initialized = false;
 }
 
 bool Renderer_LoadFile(const char* path)
 {
-    if (!g_r) return false;
+    if (!g_initialized)
+    {
+        if (g_err.empty())
+            SetErr("Renderer is not initialized");
+        return false;
+    }
 
     std::vector<MeshVertex> mv;
     std::vector<uint32_t>   mi;
     if (!LoadOBJ(path, mv, mi)) { SetErr("Failed to parse OBJ file"); return false; }
 
-    g_r->vb.Reset();
-    g_r->ib.Reset();
-    g_r->indexCount = (UINT)mi.size();
+    // Destroy old buffers
+    if (bgfx::isValid(g_vb)) bgfx::destroy(g_vb);
+    if (bgfx::isValid(g_ib)) bgfx::destroy(g_ib);
 
-    // Build GPU-side vertex buffer from MeshVertex to GPUVertex
-    std::vector<GPUVertex> gpuVerts(mv.size());
-    float maxExt = 0.f;
+    // Flatten the indexed mesh to a triangle list. This keeps the viewer path
+    // simple and avoids backend-specific surprises around index submission.
+    std::vector<PosNormalVertex> gpuVerts(mi.size());
+    float minX = mv[0].x, minY = mv[0].y, minZ = mv[0].z;
+    float maxX = mv[0].x, maxY = mv[0].y, maxZ = mv[0].z;
     for (size_t i = 0; i < mv.size(); i++)
     {
-        gpuVerts[i].pos    = { mv[i].x, mv[i].y, mv[i].z };
-        gpuVerts[i].normal = { mv[i].nx, mv[i].ny, mv[i].nz };
-        // Avoid std::max initializer_list form; use explicit comparisons instead
-        float ax = fabsf(mv[i].x), ay = fabsf(mv[i].y), az = fabsf(mv[i].z);
-        if (ax > maxExt) maxExt = ax;
-        if (ay > maxExt) maxExt = ay;
-        if (az > maxExt) maxExt = az;
+        if (mv[i].x < minX) minX = mv[i].x;
+        if (mv[i].y < minY) minY = mv[i].y;
+        if (mv[i].z < minZ) minZ = mv[i].z;
+        if (mv[i].x > maxX) maxX = mv[i].x;
+        if (mv[i].y > maxY) maxY = mv[i].y;
+        if (mv[i].z > maxZ) maxZ = mv[i].z;
     }
 
-    D3D11_BUFFER_DESC      bd{};
-    D3D11_SUBRESOURCE_DATA sd{};
+    for (size_t i = 0; i < mi.size(); ++i)
+    {
+        const MeshVertex& src = mv[mi[i]];
+        gpuVerts[i].x  = src.x;  gpuVerts[i].y  = src.y;  gpuVerts[i].z  = src.z;
+        gpuVerts[i].nx = src.nx; gpuVerts[i].ny = src.ny; gpuVerts[i].nz = src.nz;
+    }
 
-    bd.ByteWidth = (UINT)(gpuVerts.size() * sizeof(GPUVertex));
-    bd.Usage     = D3D11_USAGE_IMMUTABLE;
-    bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-    sd.pSysMem   = gpuVerts.data();
-    g_r->device->CreateBuffer(&bd, &sd, &g_r->vb);
+    const bgfx::Memory* vbMem = bgfx::copy(gpuVerts.data(), uint32_t(gpuVerts.size() * sizeof(PosNormalVertex)));
+    g_vb = bgfx::createVertexBuffer(vbMem, g_layout);
+    g_ib = BGFX_INVALID_HANDLE;
 
-    bd.ByteWidth = (UINT)(mi.size() * sizeof(uint32_t));
-    bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-    sd.pSysMem   = mi.data();
-    g_r->device->CreateBuffer(&bd, &sd, &g_r->ib);
+    if (!bgfx::isValid(g_vb))
+    {
+        if (bgfx::isValid(g_vb)) { bgfx::destroy(g_vb); g_vb = BGFX_INVALID_HANDLE; }
+        SetErr("Failed to create GPU buffers for the model");
+        return false;
+    }
 
-    g_r->distance = maxExt * 2.5f;
+    g_centerX = (minX + maxX) * 0.5f;
+    g_centerY = (minY + maxY) * 0.5f;
+    g_centerZ = (minZ + maxZ) * 0.5f;
+
+    g_extentX = (maxX - minX) * 0.5f;
+    g_extentY = (maxY - minY) * 0.5f;
+    g_extentZ = (maxZ - minZ) * 0.5f;
+    const float radius = bx::sqrt(g_extentX * g_extentX + g_extentY * g_extentY + g_extentZ * g_extentZ);
+    const float fovY = 60.0f * bx::kPi / 180.0f;
+    g_distance = bx::max(0.1f, radius / bx::sin(fovY * 0.5f) + radius * 0.5f);
+    g_vertexCount = uint32_t(gpuVerts.size());
+    g_indexCount = 0;
+    g_err.clear();
     return true;
 }
 
 void Renderer_Render()
 {
-    if (!g_r || !g_r->vb) return;
-    auto& r = *g_r;
+    if (!g_initialized) return;
 
-    float bg[] = { 0.10f, 0.12f, 0.15f, 1.f };
-    r.ctx->ClearRenderTargetView(r.rtv.Get(), bg);
-    r.ctx->ClearDepthStencilView(r.dsv.Get(), D3D11_CLEAR_DEPTH, 1.f, 0);
+    float aspect = g_width / (float)g_height;
+    float ortho[16];
+    bx::mtxIdentity(ortho);
+    bgfx::setViewTransform(0, nullptr, ortho);
+    bgfx::setViewRect(0, 0, 0, uint16_t(g_width), uint16_t(g_height));
+    bgfx::touch(0);
 
-    // Camera
-    float aspect = r.width / (float)r.height;
-    float cx = r.distance * cosf(r.pitch) * sinf(r.yaw);
-    float cy = r.distance * sinf(r.pitch);
-    float cz = r.distance * cosf(r.pitch) * cosf(r.yaw);
-    XMMATRIX proj  = XMMatrixPerspectiveFovLH(XMConvertToRadians(60.f), aspect, 0.01f, 10000.f);
-    XMMATRIX view  = XMMatrixLookAtLH(XMVectorSet(cx, cy, cz, 0),
-                                      XMVectorZero(),
-                                      XMVectorSet(0, 1, 0, 0));
-    XMMATRIX model = XMMatrixIdentity();
-    XMMATRIX mvp   = XMMatrixTranspose(model * view * proj);
-    XMMATRIX modelT = XMMatrixTranspose(model);
+    float model[16];
+    bx::mtxTranslate(model, -g_centerX, -g_centerY, -g_centerZ);
 
-    // Upload constant buffer
-    D3D11_MAPPED_SUBRESOURCE ms;
-    r.ctx->Map(r.cb.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &ms);
-    auto* cb = static_cast<ConstantBuffer*>(ms.pData);
-    XMStoreFloat4x4(&cb->mvp,   mvp);
-    XMStoreFloat4x4(&cb->model, modelT);
-    cb->lightDir = { 0.5f, -0.8f, 0.3f };
-    cb->_pad = 0;
-    r.ctx->Unmap(r.cb.Get(), 0);
+    float rotation[16];
+    float scaleMtx[16];
+    float rotatedModel[16];
+    float modelViewProj[16];
+    const float clipScale = bx::max(0.01f, 1.0f / bx::max(g_distance, 0.01f));
+    bx::mtxRotateXY(rotation, g_pitch, g_yaw);
+    bx::mtxScale(scaleMtx, clipScale / aspect, clipScale, clipScale);
+    bx::mtxMul(rotatedModel, rotation, model);
+    bx::mtxMul(modelViewProj, scaleMtx, rotatedModel);
 
-    // Pipeline
-    D3D11_VIEWPORT vp{ 0, 0, (float)r.width, (float)r.height, 0, 1 };
-    r.ctx->RSSetViewports(1, &vp);
-    r.ctx->OMSetRenderTargets(1, r.rtv.GetAddressOf(), r.dsv.Get());
-    r.ctx->IASetInputLayout(r.layout.Get());
-    r.ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    UINT stride = sizeof(GPUVertex), offset = 0;
-    r.ctx->IASetVertexBuffers(0, 1, r.vb.GetAddressOf(), &stride, &offset);
-    r.ctx->IASetIndexBuffer(r.ib.Get(), DXGI_FORMAT_R32_UINT, 0);
-    r.ctx->VSSetShader(r.vs.Get(), nullptr, 0);
-    r.ctx->PSSetShader(r.ps.Get(), nullptr, 0);
-    r.ctx->VSSetConstantBuffers(0, 1, r.cb.GetAddressOf());
-    r.ctx->PSSetConstantBuffers(0, 1, r.cb.GetAddressOf());
-    r.ctx->DrawIndexed(r.indexCount, 0, 0);
+    if (!bgfx::isValid(g_vb) || !bgfx::isValid(g_program))
+    {
+        bgfx::frame();
+        return;
+    }
 
-    r.sc->Present(0, 0);
+    // Draw
+    bgfx::setUniform(g_u_mvp, modelViewProj);
+    bgfx::setUniform(g_u_normalMtx, rotation);
+    bgfx::setVertexBuffer(0, g_vb);
+    if (bgfx::isValid(g_ib))
+        bgfx::setIndexBuffer(g_ib);
+    bgfx::setState(kRenderState);
+    bgfx::submit(0, g_program);
+
+    bgfx::frame();
 }
 
-void Renderer_Resize(int width, int height)
+void Renderer_Resize(int x, int y, int width, int height)
 {
-    if (!g_r || width <= 0 || height <= 0) return;
-    auto& r = *g_r;
-    r.width = width; r.height = height;
-    r.ctx->OMSetRenderTargets(0, nullptr, nullptr);
-    r.rtv.Reset();
-    r.dsv.Reset();
-    r.sc->ResizeBuffers(0, (UINT)width, (UINT)height, DXGI_FORMAT_UNKNOWN, 0);
-    CreateRTV(r);
-    CreateDSV(r, width, height);
+    if (!g_initialized || width <= 0 || height <= 0) return;
+    g_width = width; g_height = height;
+    bgfx::reset(uint32_t(width), uint32_t(height), BGFX_RESET_VSYNC);
 }
 
 void Renderer_SetViewAngle(float distance, float pitch, float yaw)
 {
-    if (!g_r) return;
-    g_r->distance = distance;
-    g_r->pitch    = pitch;
-    g_r->yaw      = yaw;
+    g_distance = distance;
+    g_pitch    = pitch;
+    g_yaw      = yaw;
+}
+
+float Renderer_GetSuggestedDistance()
+{
+    return g_distance;
 }
 
 const char* Renderer_GetLastError()

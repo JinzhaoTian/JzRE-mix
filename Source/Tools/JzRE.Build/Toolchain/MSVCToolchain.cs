@@ -1,64 +1,61 @@
-using System.Diagnostics;
-
 namespace JzRE.Build;
 
 /// <summary>
-/// Wraps MSVC (cl.exe) to compile C++ modules into native DLLs.
-/// Mirrors FlaxEngine's Windows toolchain: locates VS via vswhere,
-/// sets up x64 environment, then invokes cl.exe with appropriate flags.
+/// MSVC toolchain for Windows.  Produces .dll with PDB debug info.
+/// Inherits the VC environment from the caller (vcvarsall.bat or equivalent).
 /// </summary>
-public class MSVCToolchain
+public class MSVCToolchain : ToolchainInfo
 {
-    private readonly BuildOptions _opts;
-    private readonly string       _root;
+    public MSVCToolchain(BuildOptions opts, string root) : base(opts, root) { }
 
-    public MSVCToolchain(BuildOptions opts, string root)
+    public override string CompilerPath => VSLocator.FindClExe() ?? "cl.exe";
+
+    protected override string OutputExtension => ".dll";
+    protected override string DebugFlags       => "/Od /MDd /D_DEBUG";
+    protected override string DevelopFlags => "/O2 /MD /D_DEBUG /DBUILD_DEVELOP";
+    protected override string ReleaseFlags     => "/O2 /MD /DNDEBUG";
+
+    // Debug info is always generated (including Release) so PDBs are available
+    // for crash dumps and joint C++/C# debugging — mirrors FlaxEngine's policy.
+    private string DebugInfoFlags => "/Zi /FS";
+
+    protected override string[] PlatformIncludes(string srcDir) => new[]
     {
-        _opts = opts;
-        _root = root;
-    }
+        $"/I\"{srcDir}\"",
+        $"/I\"{srcDir}\\Core\"",
+        $"/I\"{srcDir}\\Rendering\"",
+        $"/I\"{srcDir}\\Scripting\"",
+    };
 
-    public void Compile(Module module)
+    public override string[] CompilerArgs(Module module, string[] sources, string includes, string outDir)
     {
-        var clExe = FindClExe();
-        if (clExe == null)
-        {
-            Console.WriteLine("  MSVC cl.exe not found — skipping native build.");
-            Console.WriteLine("  Install Visual Studio with C++ workload.");
-            return;
-        }
-
-        var srcDir = Path.Combine(_root, "Source", "Runtime");
-        var outDir = Path.Combine(_root, "Binaries", _opts.Platform, _opts.Configuration);
-        Directory.CreateDirectory(outDir);
-
-        // Write source list to a response file to avoid command-line length limits
-        var sources  = Directory.GetFiles(srcDir, "*.cpp", SearchOption.AllDirectories);
-        var rspPath  = Path.Combine(Path.GetTempPath(), "jzre_cl.rsp");
-        File.WriteAllLines(rspPath, sources.Select(s => $"\"{s}\""));
-
-        var cfg     = _opts.Configuration == "Debug" ? "/Od /Zi /D_DEBUG" : "/O2 /DNDEBUG";
         var outDll  = Path.Combine(outDir, $"{module.BinaryModuleName}.dll");
         var outPdb  = Path.Combine(outDir, $"{module.BinaryModuleName}.pdb");
-        var includes = $"/I\"{srcDir}\" /I\"{srcDir}\\Core\" /I\"{srcDir}\\Rendering\" /I\"{srcDir}\\Scripting\"";
+        var cfg     = ConfigurationFlags;
+        var rsp     = SourcesRsp(sources);
 
-        var clArgs = $"/nologo /std:c++17 /EHsc {cfg} /DJZRE_RUNTIME_EXPORTS {includes}" +
-                     $" @\"{rspPath}\"" +
-                     $" /Fe:\"{outDll}\" /Fo:\"{outDir}\\\\\" /Fd:\"{outPdb}\"" +
-                     $" /LD /link d3d11.lib dxgi.lib d3dcompiler.lib";
+        // bgfx prebuilt libs + system SDK libs for D3D11 + Windows API
+        var libDir  = ThirdPartyLibPath;
+        var libs    = $"/LIBPATH:\"{libDir}\" bgfx.lib bx.lib bimg.lib d3d11.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib ole32.lib advapi32.lib";
 
-        if (_opts.Verbose) Console.WriteLine($"  cl.exe {clArgs}");
-
-        var psi = new ProcessStartInfo(clExe, clArgs) { UseShellExecute = false };
-        // Inherit the VC environment — caller (Build.bat) already ran vcvarsall.bat
-        using var proc = Process.Start(psi)!;
-        proc.WaitForExit();
-
-        if (proc.ExitCode != 0) throw new Exception($"cl.exe exited with {proc.ExitCode}");
-        Console.WriteLine($"  -> {Path.GetFileName(outDll)}");
+        return new[]
+        {
+            "/nologo",
+            "/std:c++20",
+            "/Zc:__cplusplus",
+            "/Zc:preprocessor",
+            "/utf-8",
+            "/EHsc",
+            DebugInfoFlags,
+            cfg,
+            "/DJzRE_RUNTIME_EXPORTS",
+            includes,
+            $"@{rsp}",
+            $"/Fe:\"{outDll}\"",
+            $"/Fo{outDir.TrimEnd('\\')}\\",
+            $"/Fd:\"{outPdb}\"",
+            "/LD",
+            "/link", "/DEBUG:FULL", libs
+        };
     }
-
-    // Delegate VS detection to the shared VSLocator so toolset version is
-    // consistent between Build (cl.exe invocation) and GenerateProjectFiles (.vcxproj).
-    private static string? FindClExe() => VSLocator.FindClExe();
 }

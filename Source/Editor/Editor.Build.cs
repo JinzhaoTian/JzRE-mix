@@ -12,8 +12,15 @@ public class JzREEditor : Module
 
     public override void Setup(BuildOptions options)
     {
-        // Declares that the editor depends on the native runtime DLL.
+        // Declares that the editor depends on the native runtime library.
         // JzRE.Build ensures JzRERuntime is compiled before JzREEditor.
         PublicDependencies.Add("JzRE.Runtime");
+
+        NuGetPackages.AddRange(new[]
+        {
+            "Avalonia.Desktop 11.1.*",
+            "Avalonia.Themes.Fluent 11.1.*",
+            "Avalonia.Diagnostics 11.1.*"
+        });
     }
 }

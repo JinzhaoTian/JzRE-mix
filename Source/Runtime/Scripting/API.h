@@ -1,18 +1,45 @@
 #pragma once
+#include "../Core/Platform.h"
 
-// ── DLL export/import macros ────────────────────────────────────────────────
-// When compiling JzRE.Runtime.dll define JZRE_RUNTIME_EXPORTS.
+// ── DLL export / import ───────────────────────────────────────────────────────
+// When compiling JzRE.Runtime define JzRE_RUNTIME_EXPORTS.
 // The C# editor (and any other consumer) imports without that define.
 //
 // These exported C functions are the P/Invoke boundary: the "scripting API"
 // surface that mirrors FlaxEngine's generated binding exports.
 
-#ifdef JZRE_RUNTIME_EXPORTS
-    #define JzRE_API __declspec(dllexport)
-#else
-    #define JzRE_API __declspec(dllimport)
+#ifndef JzRE_API
+    #define JzRE_API JzRE_EXPORT
 #endif
 
-// Marks a function as part of the public scripting API (C linkage, no mangling).
-// Equivalent to FlaxEngine's API_FUNCTION() annotation on exported bindings.
-#define API_FUNCTION() extern "C" JzRE_API
+// ── API annotation macros ─────────────────────────────────────────────────────
+// These are parse-time markers for the bindings generator (Phase 3) and the
+// managed interop bridge.  With the exception of API_EXPORT(), all macros
+// expand to nothing — they exist purely for the header parser.
+//
+// Usage in C++ headers:
+//   API_CLASS() class MyObject : public JzObject { … };
+//   API_STRUCT() struct MyData { int x, y; };
+//   API_ENUM() enum class MyEnum { A, B };
+//   API_EXPORT() void SomeExportedFunction();  // standalone C function
+
+// Marker for a class method / standalone function exposed to managed code.
+// Inside a class body this is a parse-time annotation only (no expansion).
+// For standalone functions, use the separate API_EXPORT() macro.
+#define API_FUNCTION(...)
+
+// Exported standalone function with C linkage (P/Invoke boundary).
+// Use this for free functions only — NOT for class member functions.
+#define API_EXPORT()  extern "C" JzRE_API
+
+// Marker macros — parse-time only
+#define API_CLASS(...)                           // class eligible for binding
+#define API_STRUCT(...)                          // POD struct eligible for binding
+#define API_ENUM(...)                            // enum eligible for binding
+#define API_FIELD(...)                           // field exposed to managed code
+#define API_PROPERTY(...)                        // getter/setter pair
+#define API_INTERFACE(...)                       // abstract interface
+#define API_PARAM(refKind)                       // ref/out parameter hint
+#define API_EVENT(...)                           // scripting event
+#define API_INJECT_CODE(...)                     // raw code injected into bindings
+#define API_AUTO_SERIALIZATION()                 // auto-generate serialization

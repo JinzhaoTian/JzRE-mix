@@ -6,24 +6,23 @@ namespace JzRE.Build;
 /// Locates the Visual Studio installation and detects the MSVC platform toolset
 /// version so that generated .vcxproj files use whatever is actually installed
 /// rather than a hardcoded "v143".
+/// Supports version-constrained lookups so that "-vs2022" generates toolset
+/// settings for VS 2022 even when a newer VS is also installed.
 /// </summary>
 public static class VSLocator
 {
     private static string? _vsPath;
+    private static string? _vsVersion;
     private static string? _msvcVersion;
 
-    // ── VS install path ──────────────────────────────────────────────────────
+    // ── vswhere helper ───────────────────────────────────────────────────────
 
-    public static string? FindVSInstallPath()
+    private static string? RunVsWhere(string args)
     {
-        if (_vsPath != null) return _vsPath;
-
         var vsWhere = FindVsWhere();
         if (vsWhere == null) return null;
 
-        var psi = new ProcessStartInfo(
-            vsWhere,
-            "-latest -products * -requires Microsoft.VisualCpp.Tools.HostX64.TargetX64 -property installationPath")
+        var psi = new ProcessStartInfo(vsWhere, args)
         {
             RedirectStandardOutput = true,
             UseShellExecute = false,
@@ -33,64 +32,136 @@ public static class VSLocator
             using var p = Process.Start(psi)!;
             var line = p.StandardOutput.ReadLine()?.Trim();
             p.WaitForExit();
-            _vsPath = string.IsNullOrEmpty(line) ? null : line;
+            return string.IsNullOrEmpty(line) ? null : line;
         }
-        catch { _vsPath = null; }
-
-        return _vsPath;
+        catch { return null; }
     }
 
-    // ── MSVC folder version (e.g. "14.38.33130") ────────────────────────────
+    // ── VS install path ──────────────────────────────────────────────────────
 
-    public static string? FindMSVCVersion()
+    /// <summary>
+    /// Returns the VS install path, optionally constrained to a maximum major version.
+    /// Pass maxMajor=17 to find VS 2022 even when VS 2026+ is also installed.
+    /// </summary>
+    public static string? FindVSInstallPath(int? maxMajor = null)
     {
-        if (_msvcVersion != null) return _msvcVersion;
+        if (maxMajor == null)
+        {
+            if (_vsPath != null) return _vsPath;
+            _vsPath = RunVsWhere(
+                "-latest -products * -requires Microsoft.VisualCpp.Tools.HostX64.TargetX64 -property installationPath");
+            return _vsPath;
+        }
+        return RunVsWhere(
+            $"-latest -version \"[1.0,{maxMajor + 1}.0)\" -products * -requires Microsoft.VisualCpp.Tools.HostX64.TargetX64 -property installationPath");
+    }
 
-        var vsPath = FindVSInstallPath();
+    // ── VS installation version (e.g. "18.5.11709.299") ─────────────────────
+
+    /// <summary>
+    /// Returns the VS shell version string, optionally constrained to a maximum major.
+    /// </summary>
+    public static string? FindVSVersion(int? maxMajor = null)
+    {
+        if (maxMajor == null)
+        {
+            if (_vsVersion != null) return _vsVersion;
+            _vsVersion = RunVsWhere(
+                "-latest -products * -requires Microsoft.VisualCpp.Tools.HostX64.TargetX64 -property installationVersion");
+            return _vsVersion;
+        }
+        return RunVsWhere(
+            $"-latest -version \"[1.0,{maxMajor + 1}.0)\" -products * -requires Microsoft.VisualCpp.Tools.HostX64.TargetX64 -property installationVersion");
+    }
+
+    /// <summary>
+    /// Returns the VCProjectVersion string for the target VS.
+    /// VCProjectVersion is the .vcxproj schema version — one fixed value per VS
+    /// generation, regardless of update number:
+    ///   VS 2022 (shell 17.x) → "17.0"
+    ///   VS 2026 (shell 18.x) → "18.0"
+    ///   VS 2019 (shell 16.x) → "16.0"
+    ///   VS 2017 (shell 15.x) → "15.0"
+    /// </summary>
+    public static string DetectVCProjectVersion(int? maxMajor = null)
+    {
+        var ver = FindVSVersion(maxMajor);
+        if (ver != null)
+        {
+            var dot = ver.IndexOf('.');
+            if (dot > 0 && int.TryParse(ver[..dot], out int major))
+            {
+                return $"{major}.0";
+            }
+        }
+        return "17.0";
+    }
+
+    // ── MSVC folder version (e.g. "14.44.35207") ────────────────────────────
+
+    /// <summary>
+    /// Returns the highest MSVC compiler version installed under the given VS,
+    /// optionally constrained to a maximum VS major version.
+    /// </summary>
+    public static string? FindMSVCVersion(int? maxMajor = null)
+    {
+        if (maxMajor == null)
+        {
+            if (_msvcVersion != null) return _msvcVersion;
+            var vsPath = FindVSInstallPath();
+            _msvcVersion = ReadMSVCVersion(vsPath);
+            return _msvcVersion;
+        }
+        return ReadMSVCVersion(FindVSInstallPath(maxMajor));
+    }
+
+    private static string? ReadMSVCVersion(string? vsPath)
+    {
         if (vsPath == null) return null;
-
         var toolsBase = Path.Combine(vsPath, "VC", "Tools", "MSVC");
         if (!Directory.Exists(toolsBase)) return null;
-
-        _msvcVersion = Directory.GetDirectories(toolsBase)
-                                .Select(Path.GetFileName)
-                                .Where(v => v != null)
-                                .OrderByDescending(v => v)
-                                .FirstOrDefault();
-        return _msvcVersion;
+        return Directory.GetDirectories(toolsBase)
+                        .Select(Path.GetFileName)
+                        .Where(v => v != null)
+                        .OrderByDescending(v => v)
+                        .FirstOrDefault();
     }
 
     // ── Platform toolset string ──────────────────────────────────────────────
 
     /// <summary>
-    /// Converts an MSVC folder version to a VS platform toolset identifier:
-    ///   "14.4x.xxxxx" -> "v144"  (VS 2022 17.x)
-    ///   "14.3x.xxxxx" -> "v143"  (VS 2022 earlier)
-    ///   "14.2x.xxxxx" -> "v142"  (VS 2019)
-    ///   "14.1x.xxxxx" -> "v141"  (VS 2017)
-    /// The rule: "vMAJOR + first digit of MINOR"
+    /// Maps a VS shell major version to the platform toolset identifier registered
+    /// in that VS installation's MSBuild targets. The toolset ID is a property of
+    /// the VS *generation*, not the individual MSVC minor version:
+    ///   VS 2026 (18) → "v145"
+    ///   VS 2022 (17) → "v143"  (covers all MSVC 14.3x–14.4x in VS 2022)
+    ///   VS 2019 (16) → "v142"
+    ///   VS 2017 (15) → "v141"
     /// </summary>
-    public static string VersionToToolset(string msvcVersion)
+    public static string VSMajorToToolset(int vsMajor) => vsMajor switch
     {
-        var parts = msvcVersion.Split('.');
-        if (parts.Length >= 2
-            && int.TryParse(parts[0], out int major)
-            && parts[1].Length > 0
-            && char.IsDigit(parts[1][0]))
-        {
-            return $"v{major}{parts[1][0]}";
-        }
-        return "v143"; // safe fallback
-    }
+        18    => "v145",
+        17    => "v143",
+        16    => "v142",
+        15    => "v141",
+        _     => "v143",
+    };
 
     /// <summary>
-    /// Returns the platform toolset string for the newest installed VS, e.g. "v143".
+    /// Returns the platform toolset string for the target VS installation.
+    /// Pass maxMajor=17 to get the VS 2022 toolset when VS 2026+ is also installed.
     /// Falls back to "v143" if detection fails.
     /// </summary>
-    public static string DetectPlatformToolset()
+    public static string DetectPlatformToolset(int? maxMajor = null)
     {
-        var ver = FindMSVCVersion();
-        return ver != null ? VersionToToolset(ver) : "v143";
+        var ver = FindVSVersion(maxMajor);
+        if (ver != null)
+        {
+            var dot = ver.IndexOf('.');
+            if (dot > 0 && int.TryParse(ver[..dot], out int major))
+                return VSMajorToToolset(major);
+        }
+        return "v143";
     }
 
     // ── cl.exe path ─────────────────────────────────────────────────────────

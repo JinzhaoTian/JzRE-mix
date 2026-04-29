@@ -9,6 +9,8 @@ try
 
     if (opts.GenerateProjectFiles)
         builder.GenerateProjectFiles();
+    else if (opts.BuildBindingsOnly)
+        builder.BuildBindingsOnly();
     else
         builder.Build();
 }

@@ -9,6 +9,7 @@ public class JzREEditor : Module
     public override string BinaryModuleName => "JzRE.Editor";
     public override bool   BuildNativeCode  => false;
     public override bool   BuildCSharp      => true;
+    public override string CSharpOutputType => "WinExe";
 
     public override void Setup(BuildOptions options)
     {

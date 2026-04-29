@@ -1010,7 +1010,7 @@ public class Builder
         sb.AppendLine("  \"profiles\": {");
         sb.AppendLine("    \"JzRE.Editor\": {");
         sb.AppendLine("      \"commandName\": \"Executable\",");
-        sb.AppendLine($"      \"executablePath\": \"{rootNorm}/Binaries/Windows/$(Configuration)/JzRE.Editor.exe\",");
+        sb.AppendLine($"      \"executablePath\": \"{rootNorm}/Binaries/{_opts.Platform}/$(Configuration)/JzRE.Editor.exe\",");
         sb.AppendLine("      \"commandLineArgs\": \"--debug\",");
         sb.AppendLine($"      \"workingDirectory\": \"{rootNorm}\",");
         sb.AppendLine("      \"nativeDebugging\": true");
@@ -1043,10 +1043,23 @@ public class Builder
                 return $"    <PackageReference Include=\"{name}\" Version=\"{version}\" />";
             }));
 
+        var projectRefs = module.PublicDependencies.Concat(module.PrivateDependencies)
+            .Distinct()
+            .Select(depName => allModules.FirstOrDefault(m => m.Name == depName || m.BinaryModuleName == depName))
+            .Where(dep => dep?.BuildCSharp == true)
+            .Select(dep =>
+            {
+                var depCsproj = dep!.CustomExternalProjectFilePath
+                    ?? Path.Combine(dep.ModuleDirectory!, $"{dep.BinaryModuleName}.csproj");
+                var rel = Path.GetRelativePath(projDir, depCsproj).Replace('/', '\\');
+                return $"    <ProjectReference Include=\"{rel}\" />";
+            })
+            .ToList();
+
         var sb = new StringBuilder();
         sb.AppendLine("<Project Sdk=\"Microsoft.NET.Sdk\">");
         sb.AppendLine("  <PropertyGroup>");
-        sb.AppendLine("    <OutputType>WinExe</OutputType>");
+        sb.AppendLine($"    <OutputType>{module.CSharpOutputType}</OutputType>");
         sb.AppendLine("    <TargetFramework>net8.0</TargetFramework>");
         sb.AppendLine($"    <AssemblyName>{module.BinaryModuleName}</AssemblyName>");
         sb.AppendLine($"    <RootNamespace>{module.Name}</RootNamespace>");
@@ -1054,12 +1067,13 @@ public class Builder
         sb.AppendLine("    <ImplicitUsings>enable</ImplicitUsings>");
         sb.AppendLine("    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>");
         sb.AppendLine("    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>");
-        sb.AppendLine($"    <OutputPath>{projToRoot}\\Binaries\\Windows\\$(Configuration)\\</OutputPath>");
+        sb.AppendLine($"    <OutputPath>{projToRoot}\\Binaries\\{_opts.Platform}\\$(Configuration)\\</OutputPath>");
         sb.AppendLine("    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>");
         sb.AppendLine("    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>");
         sb.AppendLine("    <Configurations>Debug;Develop;Release</Configurations>");
         sb.AppendLine("    <Platforms>x64</Platforms>");
-        sb.AppendLine("    <ApplicationManifest>app.manifest</ApplicationManifest>");
+        if (module.CSharpOutputType == "WinExe")
+            sb.AppendLine("    <ApplicationManifest>app.manifest</ApplicationManifest>");
         sb.AppendLine("    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>");
         sb.AppendLine("    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>");
         sb.AppendLine("  </PropertyGroup>");
@@ -1067,17 +1081,27 @@ public class Builder
         if (!string.IsNullOrEmpty(nugetPkgs))
             sb.AppendLine(nugetPkgs);
         sb.AppendLine("  </ItemGroup>");
+        if (projectRefs.Count > 0)
+        {
+            sb.AppendLine("  <ItemGroup>");
+            foreach (var pr in projectRefs)
+                sb.AppendLine(pr);
+            sb.AppendLine("  </ItemGroup>");
+        }
         sb.AppendLine("  <ItemGroup>");
         sb.AppendLine("    <!-- Compile C# sources in the module directory. Gen.cs files are generated here. -->");
         sb.AppendLine("    <Compile Include=\"**\\*.cs\" Exclude=\"obj\\**;bin\\**;*.Build.cs\" />");
         sb.AppendLine("  </ItemGroup>");
-        sb.AppendLine("  <!-- Embed app.manifest into the apphost exe (required by NativeControlHost). -->");
-        sb.AppendLine("  <Target Name=\"EmbedWin32Manifest\" AfterTargets=\"CoreCompile\"");
-        sb.AppendLine("          Condition=\"'$(OS)' == 'Windows_NT' And '$(ApplicationManifest)' != '' And Exists('$(AppHostIntermediatePath)')\">");
-        sb.AppendLine("    <Exec Command=\"mt.exe -manifest &quot;$(ApplicationManifest)&quot; -outputresource:&quot;$(AppHostIntermediatePath)&quot;;1\"");
-        sb.AppendLine("          WorkingDirectory=\"$(MSBuildProjectDirectory)\"");
-        sb.AppendLine("          ContinueOnError=\"WarnAndContinue\" />");
-        sb.AppendLine("  </Target>");
+        if (module.CSharpOutputType == "WinExe")
+        {
+            sb.AppendLine("  <!-- Embed app.manifest into the apphost exe (required by NativeControlHost). -->");
+            sb.AppendLine("  <Target Name=\"EmbedWin32Manifest\" AfterTargets=\"CoreCompile\"");
+            sb.AppendLine("          Condition=\"'$(OS)' == 'Windows_NT' And '$(ApplicationManifest)' != '' And Exists('$(AppHostIntermediatePath)')\">");
+            sb.AppendLine("    <Exec Command=\"mt.exe -manifest &quot;$(ApplicationManifest)&quot; -outputresource:&quot;$(AppHostIntermediatePath)&quot;;1\"");
+            sb.AppendLine("          WorkingDirectory=\"$(MSBuildProjectDirectory)\"");
+            sb.AppendLine("          ContinueOnError=\"WarnAndContinue\" />");
+            sb.AppendLine("  </Target>");
+        }
         sb.AppendLine("  <!-- Compile bgfx shaders to platform-specific .bin files. -->");
         sb.AppendLine("  <Target Name=\"CompileShaders\" BeforeTargets=\"BeforeBuild\"");
         sb.AppendLine("          Condition=\"'$(OS)' == 'Windows_NT'\">");

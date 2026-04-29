@@ -37,18 +37,21 @@ public class Builder
         var selected = SelectModules(modules, _opts.Target);
         Console.WriteLine($"Building {selected.Count} module(s) for target '{_opts.Target}': {string.Join(", ", selected.Select(m => m.Name))}");
 
+        // Setup all modules first so PublicDependencies are populated before
+        // bindings generation needs to find managed consumers.
+        foreach (var m in modules)
+            m.Setup(_opts);
+
         // Generate bindings for modules with HasBindings before compiling.
-        // This writes .Gen.cpp and .Gen.cs files to the source tree so the
-        // existing toolchain and dotnet build pick them up automatically.
+        // This writes .Gen.cpp/.Gen.h into the native module dir and .Gen.cs
+        // into the managed consumer's dir so both toolchains pick them up.
         foreach (var m in selected.Where(m => m.HasBindings))
         {
-            GenerateBindings(m);
+            GenerateBindings(m, modules);
         }
 
         foreach (var m in selected)
         {
-            m.Setup(_opts);
-
             if (m.BuildNativeCode)
             {
                 Console.WriteLine($"[C++] {m.Name}");
@@ -77,12 +80,11 @@ public class Builder
     ///   {ModuleDir}/{Module}.Bindings.Gen.cpp  — internal call stubs
     ///   {ModuleDir}/{Module}.Bindings.Gen.cs   — partial class bindings
     /// </summary>
-    private void GenerateBindings(Module module)
+    private void GenerateBindings(Module module, List<Module> allModules)
     {
         var moduleDir = module.ModuleDirectory!;
         Directory.CreateDirectory(moduleDir);
 
-        // Collect headers that may have API annotations
         var headers = Directory.GetFiles(moduleDir, "*.h", SearchOption.AllDirectories)
             .Where(f => HasApiAnnotations(f))
             .ToList();
@@ -98,15 +100,25 @@ public class Builder
         var parser = new Bindings.HeaderParser(module.Name);
         var moduleInfo = parser.Parse(headers);
 
-        // Generate C++ glue code
+        // Generate C++ glue code (.Gen.cpp) and declarations (.Gen.h) into the native module dir
         var cppGen = new Bindings.CppGenerator(moduleInfo);
+
         var cppPath = Path.Combine(moduleDir, $"{module.BinaryModuleName}.Bindings.Gen.cpp");
         File.WriteAllText(cppPath, cppGen.Generate());
         Console.WriteLine($"    -> {Path.GetRelativePath(_root, cppPath)}");
 
-        // Generate C# bindings
+        var hPath = Path.Combine(moduleDir, $"{module.BinaryModuleName}.Bindings.Gen.h");
+        File.WriteAllText(hPath, cppGen.GenerateHeader());
+        Console.WriteLine($"    -> {Path.GetRelativePath(_root, hPath)}");
+
+        // Generate C# bindings into the managed consumer's directory, not the native module dir.
+        // Find the first C# module that lists this module as a dependency.
+        var consumer = allModules.FirstOrDefault(m =>
+            m.BuildCSharp && m.PublicDependencies.Contains(module.Name));
+        var csDir = consumer?.ModuleDirectory ?? moduleDir;
+
         var csGen = new Bindings.CSharpGenerator(moduleInfo);
-        var csPath = Path.Combine(moduleDir, $"{module.BinaryModuleName}.Bindings.Gen.cs");
+        var csPath = Path.Combine(csDir, $"{module.BinaryModuleName}.Bindings.Gen.cs");
         File.WriteAllText(csPath, csGen.Generate());
         Console.WriteLine($"    -> {Path.GetRelativePath(_root, csPath)}");
     }
@@ -181,10 +193,13 @@ public class Builder
             return;
         }
 
+        foreach (var m in modules)
+            m.Setup(_opts);
+
         Console.WriteLine($"Building bindings for {bindingsModules.Count} module(s)...");
         foreach (var m in bindingsModules)
         {
-            GenerateBindings(m);
+            GenerateBindings(m, modules);
         }
         Console.WriteLine("Bindings build complete.");
     }
@@ -237,6 +252,9 @@ public class Builder
                 var rel     = Path.GetRelativePath(_root, vcxPath).Replace('/', '\\');
                 slnProjects.Add((m.Name, rel, CppProjectTypeGuid, ModuleGuid(m.Name), "x64"));
                 Console.WriteLine($"  Generated {rel}");
+
+                GenerateVcxprojFilters(vcxPath);
+                Console.WriteLine($"  Generated {Path.GetRelativePath(_root, vcxPath + ".filters")}");
 
                 // Generate .vcxproj.user with debugger launch settings so that
                 // F5 on the C++ DLL project launches the editor with --debug.
@@ -875,6 +893,72 @@ public class Builder
         return projPath;
     }
 
+    private void GenerateVcxprojFilters(string vcxprojPath)
+    {
+        var projDir     = Path.GetDirectoryName(vcxprojPath)!;
+        var filtersPath = vcxprojPath + ".filters";
+
+        var sources = Directory.GetFiles(projDir, "*.cpp", SearchOption.AllDirectories);
+        var headers = Directory.GetFiles(projDir, "*.h",   SearchOption.AllDirectories);
+
+        // Collect every unique ancestor folder (relative to projDir) that contains a source file.
+        var filters = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in sources.Concat(headers))
+        {
+            var rel = Path.GetRelativePath(projDir, f).Replace('/', '\\');
+            var dir = Path.GetDirectoryName(rel);
+            while (!string.IsNullOrEmpty(dir))
+            {
+                filters.Add(dir);
+                dir = Path.GetDirectoryName(dir);
+            }
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<?xml version=\"1.0\" encoding=\"utf-8\"?>");
+        sb.AppendLine("<Project ToolsVersion=\"4.0\" xmlns=\"http://schemas.microsoft.com/developer/msbuild/2003\">");
+
+        // Filter definitions
+        sb.AppendLine("  <ItemGroup>");
+        foreach (var filter in filters)
+        {
+            sb.AppendLine($"    <Filter Include=\"{filter}\">");
+            sb.AppendLine($"      <UniqueIdentifier>{ModuleGuid(vcxprojPath + "|" + filter)}</UniqueIdentifier>");
+            sb.AppendLine("    </Filter>");
+        }
+        sb.AppendLine("  </ItemGroup>");
+
+        // ClCompile entries
+        sb.AppendLine("  <ItemGroup>");
+        foreach (var f in sources)
+        {
+            var rel    = Path.GetRelativePath(projDir, f).Replace('/', '\\');
+            var filter = Path.GetDirectoryName(rel);
+            sb.AppendLine($"    <ClCompile Include=\"{rel}\">");
+            if (!string.IsNullOrEmpty(filter))
+                sb.AppendLine($"      <Filter>{filter}</Filter>");
+            sb.AppendLine("    </ClCompile>");
+        }
+        sb.AppendLine("  </ItemGroup>");
+
+        // ClInclude entries
+        sb.AppendLine("  <ItemGroup>");
+        foreach (var f in headers)
+        {
+            var rel    = Path.GetRelativePath(projDir, f).Replace('/', '\\');
+            var filter = Path.GetDirectoryName(rel);
+            sb.AppendLine($"    <ClInclude Include=\"{rel}\">");
+            if (!string.IsNullOrEmpty(filter))
+                sb.AppendLine($"      <Filter>{filter}</Filter>");
+            sb.AppendLine("    </ClInclude>");
+        }
+        sb.AppendLine("  </ItemGroup>");
+
+        sb.AppendLine("</Project>");
+
+        File.WriteAllText(filtersPath, sb.ToString(), Encoding.UTF8);
+    }
+
     /// <summary>
     /// Generates a .vcxproj.user file so that F5 on the C++ DLL project launches
     /// the editor executable with --debug. Mirrors FlaxEngine's
@@ -950,14 +1034,6 @@ public class Builder
         var projToRoot = Path.GetRelativePath(projDir, _root).Replace('/', '\\');
         var projToSrc  = Path.GetRelativePath(projDir, Path.Combine(_root, "Source")).Replace('/', '\\');
 
-        // Build Gen.cs includes for all modules that generate bindings
-        var genCsIncludes = new List<string>();
-        foreach (var m in allModules.Where(m => m.HasBindings && m.ModuleDirectory != null))
-        {
-            var rel = Path.GetRelativePath(projDir, m.ModuleDirectory!).Replace('/', '\\');
-            genCsIncludes.Add($"{rel}\\*.Gen.cs");
-        }
-
         var nugetPkgs = string.Join("\n", (module.NuGetPackages ?? new List<string>())
             .Select(p =>
             {
@@ -992,10 +1068,8 @@ public class Builder
             sb.AppendLine(nugetPkgs);
         sb.AppendLine("  </ItemGroup>");
         sb.AppendLine("  <ItemGroup>");
-        sb.AppendLine("    <!-- Compile C# sources in the module directory and generated bindings. -->");
+        sb.AppendLine("    <!-- Compile C# sources in the module directory. Gen.cs files are generated here. -->");
         sb.AppendLine("    <Compile Include=\"**\\*.cs\" Exclude=\"obj\\**;bin\\**;*.Build.cs\" />");
-        foreach (var inc in genCsIncludes)
-            sb.AppendLine($"    <Compile Include=\"{inc}\" />");
         sb.AppendLine("  </ItemGroup>");
         sb.AppendLine("  <!-- Embed app.manifest into the apphost exe (required by NativeControlHost). -->");
         sb.AppendLine("  <Target Name=\"EmbedWin32Manifest\" AfterTargets=\"CoreCompile\"");

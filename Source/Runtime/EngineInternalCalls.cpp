@@ -9,7 +9,6 @@
 #endif
 #include "InternalCalls.h"
 #include "Object.h"
-#include "MUtils.h"
 #include <cstdio>
 #include <cstring>
 
@@ -28,27 +27,22 @@ DEFINE_INTERNAL_CALL(void) RuntimeInternal_Log(int level, const char* message)
 DEFINE_INTERNAL_CALL(void) ObjectInternal_Destroy(void* obj, float /*timeLeft*/)
 {
     INTERNAL_CALL_CHECK(obj);
-    JzObject* native = JzObject::FromManaged(obj);
-    if (native)
-    {
-        native->OnManagedInstanceDeleted();
-        delete native;
-    }
+    auto* native = static_cast<JzObject*>(obj);
+    native->OnManagedInstanceDeleted();
+    delete native;
 }
 
-DEFINE_INTERNAL_CALL(void*) ObjectInternal_FindObject(void* managedPtr)
+// Given a native pointer, return its stored GCHandle so C# can recover the managed peer.
+DEFINE_INTERNAL_CALL(void*) ObjectInternal_FindObject(void* nativePtr)
 {
-    if (!managedPtr) return nullptr;
-    JzObject* native = JzObject::FromManaged(managedPtr);
-    return native ? native->GetManagedInstance() : nullptr;
+    if (!nativePtr) return nullptr;
+    return static_cast<JzObject*>(nativePtr)->GetManagedInstance();
 }
 
 DEFINE_INTERNAL_CALL(void) ObjectInternal_ManagedInstanceDeleted(void* obj)
 {
     INTERNAL_CALL_CHECK(obj);
-    JzObject* native = JzObject::FromManaged(obj);
-    if (native)
-        native->OnManagedInstanceDeleted();
+    static_cast<JzObject*>(obj)->OnManagedInstanceDeleted();
 }
 
 // ── Engine time ───────────────────────────────────────────────────────────────

@@ -45,17 +45,17 @@ public:
     /// Returns nullptr if not found.
     static JzObject* FromManaged(void* managedObj);
 
-protected:
-    void*       _gcHandle = nullptr;
-    uint32_t    _objectId = 0;
-    const char* _typeName = "JzObject";
-
-    /// Allocates a GCHandle for the given managed object and stores it.
-    /// Called by the internal call layer when a managed peer is created.
+    /// Stores the GCHandle for the managed peer.
+    /// Called by ScriptingEngine after NativeInterop creates the managed peer.
     void SetManagedInstance(void* gcHandle);
 
     /// Frees the GCHandle. Called from ~JzObject or from OnManagedInstanceDeleted.
     void DestroyManaged();
+
+protected:
+    void*       _gcHandle = nullptr;
+    uint32_t    _objectId = 0;
+    const char* _typeName = "JzObject";
 
 private:
     static uint32_t s_nextId;

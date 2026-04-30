@@ -4,6 +4,21 @@
 #include "ScriptingEngine.h"
 #include <algorithm>
 #include <cstdio>
+#include <cstdint>
+
+// ── NativeInterop callback types ──────────────────────────────────────────────
+typedef void* (*NI_CreateManagedObject_Fn)(const char* typeName, void* nativePtr, uint32_t objectId);
+typedef void  (*NI_FreeGCHandle_Fn)(void* gcHandle);
+typedef void  (*NI_Log_Fn)(int level, const char* message);
+
+struct NativeInteropCallbacks
+{
+    NI_CreateManagedObject_Fn CreateManagedObject = nullptr;
+    NI_FreeGCHandle_Fn        FreeGCHandle        = nullptr;
+    NI_Log_Fn                 Log                 = nullptr;
+};
+
+static NativeInteropCallbacks s_interop;
 
 // ── Script implementation ────────────────────────────────────────────────────
 
@@ -65,6 +80,8 @@ void ScriptingEngine::Shutdown()
         if (*it)
         {
             (*it)->OnDestroy();
+            if (s_interop.FreeGCHandle && (*it)->HasManagedInstance())
+                s_interop.FreeGCHandle((*it)->GetManagedInstance());
             delete *it;
         }
     }
@@ -79,6 +96,15 @@ void ScriptingEngine::Shutdown()
 void ScriptingEngine::RegisterScript(Script* script)
 {
     if (!script) return;
+
+    if (s_interop.CreateManagedObject && !script->HasManagedInstance())
+    {
+        void* gcHandle = s_interop.CreateManagedObject(
+            script->GetTypeName(), script, script->GetObjectId());
+        if (gcHandle)
+            script->SetManagedInstance(gcHandle);
+    }
+
     _scripts.push_back(script);
     script->OnEnable();
 }
@@ -119,4 +145,11 @@ void ScriptingEngine_Update(float deltaTime)
 void ScriptingEngine_Shutdown()
 {
     ScriptingEngine::Get().Shutdown();
+}
+
+void ScriptingEngine_RegisterInteropCallbacks(void* createManagedObject_fn, void* freeGCHandle_fn, void* log_fn)
+{
+    s_interop.CreateManagedObject = reinterpret_cast<NI_CreateManagedObject_Fn>(createManagedObject_fn);
+    s_interop.FreeGCHandle        = reinterpret_cast<NI_FreeGCHandle_Fn>(freeGCHandle_fn);
+    s_interop.Log                 = reinterpret_cast<NI_Log_Fn>(log_fn);
 }

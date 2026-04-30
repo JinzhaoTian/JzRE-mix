@@ -1,5 +1,5 @@
 #pragma once
-#include "../Core/Platform.h"
+#include "Platform.h"
 
 // ── Internal call macros ──────────────────────────────────────────────────────
 // JzRE-mix supports only .NET CoreCLR (hostfxr), not Mono.  Internal calls are

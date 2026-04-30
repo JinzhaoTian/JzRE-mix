@@ -1,5 +1,5 @@
 #pragma once
-#include "../Scripting/API.h"
+#include "API.h"
 
 // ── Public C API exported from JzRE.Runtime ──────────────────────────────────
 // These functions are the P/Invoke boundary called from C# (NativeRuntime.cs).

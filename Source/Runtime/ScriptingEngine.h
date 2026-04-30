@@ -67,3 +67,11 @@ API_EXPORT() void ScriptingEngine_Update(float deltaTime);
 
 /// Shut down the scripting engine. Called on editor close.
 API_EXPORT() void ScriptingEngine_Shutdown();
+
+/// Register managed interop callbacks.
+/// Must be called from C# before ScriptingEngine_Init so that managed peers
+/// are created for every Script registered with the engine.
+///   createManagedObject_fn : void* (const char* typeName, void* nativePtr, uint32_t objectId)
+///   freeGCHandle_fn        : void  (void* gcHandle)
+///   log_fn                 : void  (int level, const char* message)
+API_EXPORT() void ScriptingEngine_RegisterInteropCallbacks(void* createManagedObject_fn, void* freeGCHandle_fn, void* log_fn);

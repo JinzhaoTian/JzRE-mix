@@ -1,5 +1,5 @@
 #pragma once
-#include "../Core/Platform.h"
+#include "Platform.h"
 
 // ── DLL export / import ───────────────────────────────────────────────────────
 // When compiling JzRE.Runtime define JzRE_RUNTIME_EXPORTS.

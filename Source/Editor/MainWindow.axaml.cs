@@ -13,6 +13,7 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using JzRE;
+using JzRE.Scripting;
 
 namespace JzRE.Editor;
 
@@ -155,6 +156,14 @@ public partial class MainWindow : Window
         // Initialize the scripting engine after the renderer is ready
         if (!_scriptingInitialized)
         {
+            unsafe
+            {
+                JzRERuntimeNative.ScriptingEngine_RegisterInteropCallbacks(
+                    (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, IntPtr, uint, IntPtr>)&NativeInterop.CreateManagedObject,
+                    (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, void>)&NativeInterop.FreeGCHandle,
+                    (IntPtr)(delegate* unmanaged[Cdecl]<int, IntPtr, void>)&NativeInterop.Log
+                );
+            }
             JzRERuntimeNative.ScriptingEngine_Init();
             _scriptingInitialized = true;
         }

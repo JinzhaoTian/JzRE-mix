@@ -16,7 +16,7 @@ public abstract partial class Object : IDisposable
     internal IntPtr __unmanagedPtr;
 
     /// <summary>Unique engine object identifier, mirrors JzObject::_objectId.</summary>
-    internal Guid __internalId;
+    internal uint __internalId;
 
     /// <summary>GCHandle that pins this managed object for native access.</summary>
     internal GCHandle __gcHandle;
@@ -28,7 +28,7 @@ public abstract partial class Object : IDisposable
     /// Called by the native side via NativeInterop when creating a managed peer
     /// for an existing native object.
     /// </summary>
-    internal void SetInternalValues(IntPtr unmanagedPtr, Guid id)
+    internal void SetInternalValues(IntPtr unmanagedPtr, uint id)
     {
         __unmanagedPtr = unmanagedPtr;
         __internalId = id;

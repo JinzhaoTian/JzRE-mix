@@ -61,6 +61,17 @@ public class CppGenerator
             any = true;
         }
 
+        // Managed peer factory (native → managed peer creation)
+        foreach (var cls in _module.AllClasses)
+        {
+            if (!cls.NeedsManagedPeer) continue;
+
+            sb.AppendLine($"// ── Managed peer factory: {cls.Name} (native creates managed wrapper) ────────");
+            sb.AppendLine();
+            EmitManagedPeerFactory(sb, cls);
+            any = true;
+        }
+
         if (!any)
             sb.AppendLine("// No API-annotated types found in this module.");
 
@@ -78,7 +89,7 @@ public class CppGenerator
         sb.AppendLine($"// Module: {_module.Name}");
         sb.AppendLine("#pragma once");
         sb.AppendLine();
-        sb.AppendLine("#include \"Core/Platform.h\"");
+        sb.AppendLine("#include \"Platform.h\"");
         sb.AppendLine("#include <cstdint>");
         sb.AppendLine();
         sb.AppendLine("// ── Internal call declarations ──────────────────────────────────────────────");
@@ -95,7 +106,7 @@ public class CppGenerator
             }
 
             var virtuals = cls.Methods.Where(m => m.IsVirtual).ToList();
-            if (virtuals.Count == 0) continue;
+            if (virtuals.Count == 0 && !cls.NeedsManagedPeer) continue;
 
             // _CallBase declarations
             foreach (var v in virtuals)
@@ -104,9 +115,24 @@ public class CppGenerator
             }
 
             // SetManagedVTable declaration
-            var fnArgs = string.Join(", ", virtuals.Select(v => $"{FnPtrDecl(cls.Name, v)} {v.Name}_fn"));
-            sb.AppendLine($"extern \"C\" JzRE_EXPORT void {cls.Name}_SetManagedVTable({fnArgs});");
-            sb.AppendLine();
+            if (virtuals.Count > 0)
+            {
+                foreach (var v in virtuals)
+                    sb.AppendLine($"typedef {CppT(v.ReturnType)} (*{cls.Name}_{v.Name}_Fn)({JoinParams("void* __self", v.Parameters)});");
+
+                var fnArgs = string.Join(", ", virtuals.Select(v => $"{cls.Name}_{v.Name}_Fn {v.Name}_fn"));
+                sb.AppendLine($"extern \"C\" JzRE_EXPORT void {cls.Name}_SetManagedVTable({fnArgs});");
+                sb.AppendLine();
+            }
+
+            // Managed peer factory declarations
+            if (cls.NeedsManagedPeer)
+            {
+                sb.AppendLine($"typedef void* (*{cls.Name}_CreateManagedPeer_Fn)(void* nativePtr, uint32_t objectId);");
+                sb.AppendLine($"extern \"C\" JzRE_EXPORT void* {cls.Name}_CreateManagedPeer(void* nativePtr, uint32_t objectId);");
+                sb.AppendLine($"extern \"C\" JzRE_EXPORT void {cls.Name}_SetManagedPeerFactory({cls.Name}_CreateManagedPeer_Fn fn);");
+                sb.AppendLine();
+            }
         }
 
         if (!any)
@@ -217,6 +243,35 @@ public class CppGenerator
             sb.AppendLine("}");
             sb.AppendLine();
         }
+    }
+
+    // ── Managed peer factory ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Generates a <c>_CreateManagedPeer</c> export and a <c>_SetManagedPeerFactory</c>
+    /// registration point so that native code can spawn a managed wrapper on demand.
+    /// Mirrors the managed-vtable registration pattern.
+    /// </summary>
+    private static void EmitManagedPeerFactory(StringBuilder sb, ClassInfo cls)
+    {
+        sb.AppendLine($"typedef void* (*{cls.Name}_CreateManagedPeer_Fn)(void* nativePtr, uint32_t objectId);");
+        sb.AppendLine();
+        sb.AppendLine($"static {cls.Name}_CreateManagedPeer_Fn s_{cls.Name}_PeerFactory = nullptr;");
+        sb.AppendLine();
+
+        sb.AppendLine($"DEFINE_INTERNAL_CALL(void*) {cls.Name}_CreateManagedPeer(void* nativePtr, uint32_t objectId)");
+        sb.AppendLine("{");
+        sb.AppendLine($"    if (s_{cls.Name}_PeerFactory)");
+        sb.AppendLine($"        return s_{cls.Name}_PeerFactory(nativePtr, objectId);");
+        sb.AppendLine("    return nullptr;");
+        sb.AppendLine("}");
+        sb.AppendLine();
+
+        sb.AppendLine($"DEFINE_INTERNAL_CALL(void) {cls.Name}_SetManagedPeerFactory({cls.Name}_CreateManagedPeer_Fn fn)");
+        sb.AppendLine("{");
+        sb.AppendLine($"    s_{cls.Name}_PeerFactory = fn;");
+        sb.AppendLine("}");
+        sb.AppendLine();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

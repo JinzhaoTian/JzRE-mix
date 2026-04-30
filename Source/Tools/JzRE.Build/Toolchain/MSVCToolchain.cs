@@ -34,6 +34,8 @@ public class MSVCToolchain : ToolchainInfo
         var cfg     = ConfigurationFlags;
         var rsp     = SourcesRsp(sources);
 
+        var bxDebug = _opts.Configuration == TargetConfiguration.Debug ? "1" : "0";
+
         // bgfx prebuilt libs + system SDK libs for D3D11 + Windows API
         var libDir  = ThirdPartyLibPath;
         var libs    = $"/LIBPATH:\"{libDir}\" bgfx.lib bx.lib bimg.lib d3d11.lib dxgi.lib d3dcompiler.lib user32.lib gdi32.lib ole32.lib advapi32.lib";
@@ -49,6 +51,9 @@ public class MSVCToolchain : ToolchainInfo
             DebugInfoFlags,
             cfg,
             "/DJzRE_RUNTIME_EXPORTS",
+            $"/DBX_CONFIG_DEBUG={bxDebug}",
+            "/DNOMINMAX",
+            "/D_CRT_SECURE_NO_WARNINGS",
             includes,
             $"@{rsp}",
             $"/Fe:\"{outDll}\"",

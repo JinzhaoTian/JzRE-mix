@@ -159,7 +159,6 @@ public partial class MainWindow : Window
             unsafe
             {
                 JzRERuntimeNative.ScriptingEngine_RegisterInteropCallbacks(
-                    (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, IntPtr, uint, IntPtr>)&NativeInterop.CreateManagedObject,
                     (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, void>)&NativeInterop.FreeGCHandle,
                     (IntPtr)(delegate* unmanaged[Cdecl]<int, IntPtr, void>)&NativeInterop.Log
                 );

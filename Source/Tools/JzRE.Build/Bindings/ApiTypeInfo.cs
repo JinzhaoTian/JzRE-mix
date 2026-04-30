@@ -106,6 +106,15 @@ public class ClassInfo : ApiTypeInfo
     public List<FieldInfo>     Fields     = new();
     public string?             ManagedBaseType;
 
+    /// <summary>
+    /// When true, the bindings generator emits a managed peer factory so the
+    /// native side can create a managed wrapper on demand.  The C# side gets
+    /// a <c>CreateManagedPeer</c> callback registered via <c>SetManagedPeerFactory</c>,
+    /// and the C++ side gets a <c>{ClassName}_CreateManagedPeer</c> export.
+    /// Defaults to true for API_CLASS types.
+    /// </summary>
+    public bool NeedsManagedPeer = true;
+
     public ClassInfo() { ManagedBaseType = "Object"; }
 }
 

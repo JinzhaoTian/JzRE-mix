@@ -61,6 +61,7 @@ public class CSharpGenerator
     private void EmitClass(StringBuilder sb, ClassInfo cls)
     {
         var virtuals = cls.Methods.Where(m => m.IsVirtual).ToList();
+        bool needsStaticCtor = virtuals.Count > 0 || cls.NeedsManagedPeer;
 
         sb.AppendLine($"/// <summary>Bindings for native {_module.Namespace}::{cls.Name}.</summary>");
         // No base type here — declared in the hand-written partial file.
@@ -80,6 +81,9 @@ public class CSharpGenerator
         if (virtuals.Count > 0)
             EmitSetVTableImport(sb, cls, virtuals, "        ");
 
+        if (cls.NeedsManagedPeer)
+            EmitSetPeerFactoryImport(sb, cls, "        ");
+
         sb.AppendLine("    }");
         sb.AppendLine();
 
@@ -96,8 +100,19 @@ public class CSharpGenerator
             sb.AppendLine();
             foreach (var v in virtuals)
                 EmitManagedCallback(sb, cls, v);
-            EmitStaticCtor(sb, cls, virtuals);
         }
+
+        // ── managed peer factory ──
+        if (cls.NeedsManagedPeer)
+        {
+            sb.AppendLine("    // ── Managed peer factory (invoked from C++ to create managed wrapper) ─────");
+            sb.AppendLine();
+            EmitManagedPeerCallback(sb, cls);
+        }
+
+        // ── static constructor ──
+        if (needsStaticCtor)
+            EmitStaticCtor(sb, cls, virtuals);
 
         sb.AppendLine("}");
         sb.AppendLine();
@@ -140,6 +155,14 @@ public class CSharpGenerator
 
         sb.AppendLine($"{indent}[LibraryImport(\"{lib}\", EntryPoint = \"{cls.Name}_SetManagedVTable\")]");
         sb.AppendLine($"{indent}internal static partial void SetManagedVTable({parms});");
+        sb.AppendLine();
+    }
+
+    private void EmitSetPeerFactoryImport(StringBuilder sb, ClassInfo cls, string indent)
+    {
+        var lib = _module.NativeLibraryName;
+        sb.AppendLine($"{indent}[LibraryImport(\"{lib}\", EntryPoint = \"{cls.Name}_SetManagedPeerFactory\")]");
+        sb.AppendLine($"{indent}internal static partial void SetManagedPeerFactory(IntPtr fn);");
         sb.AppendLine();
     }
 
@@ -208,6 +231,26 @@ public class CSharpGenerator
         sb.AppendLine();
     }
 
+    // ── Managed peer factory callback ───────────────────────────────────────────
+
+    /// <summary>
+    /// Generates a <c>[UnmanagedCallersOnly]</c> callback that creates a new managed
+    /// peer instance and returns its GCHandle.  Registered with the native side via
+    /// <c>SetManagedPeerFactory</c> so that native code can spawn the managed wrapper
+    /// on demand.
+    /// </summary>
+    private static void EmitManagedPeerCallback(StringBuilder sb, ClassInfo cls)
+    {
+        sb.AppendLine($"    [UnmanagedCallersOnly(CallConvs = new[] {{ typeof(CallConvCdecl) }})]");
+        sb.AppendLine($"    private static IntPtr CreateManagedPeer(IntPtr nativePtr, uint objectId)");
+        sb.AppendLine("    {");
+        sb.AppendLine($"        var obj = new {cls.Name}();");
+        sb.AppendLine("        obj.SetInternalValues(nativePtr, objectId);");
+        sb.AppendLine("        return GCHandle.ToIntPtr(GCHandle.Alloc(obj));");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+    }
+
     // ── Static constructor — registers managed callbacks with the native vtable ──
 
     private static void EmitStaticCtor(StringBuilder sb, ClassInfo cls, List<FunctionInfo> virtuals)
@@ -216,20 +259,32 @@ public class CSharpGenerator
         sb.AppendLine("    {");
         sb.AppendLine("        unsafe");
         sb.AppendLine("        {");
-        sb.AppendLine("            InternalCalls.SetManagedVTable(");
 
-        for (int i = 0; i < virtuals.Count; i++)
+        if (virtuals.Count > 0)
         {
-            var v      = virtuals[i];
-            var csRet  = CsT(v.ReturnType);
-            var pTypes = string.Join(", ",
-                new[] { "IntPtr" }.Concat(v.Parameters.Select(p => CsT(p.Type))));
-            var sep    = i < virtuals.Count - 1 ? "," : "";
+            sb.AppendLine("            InternalCalls.SetManagedVTable(");
 
-            sb.AppendLine($"                (IntPtr)(delegate* unmanaged[Cdecl]<{pTypes}, {csRet}>)&ManagedCallback_{v.Name}{sep}");
+            for (int i = 0; i < virtuals.Count; i++)
+            {
+                var v      = virtuals[i];
+                var csRet  = CsT(v.ReturnType);
+                var pTypes = string.Join(", ",
+                    new[] { "IntPtr" }.Concat(v.Parameters.Select(p => CsT(p.Type))));
+                var sep    = i < virtuals.Count - 1 ? "," : "";
+
+                sb.AppendLine($"                (IntPtr)(delegate* unmanaged[Cdecl]<{pTypes}, {csRet}>)&ManagedCallback_{v.Name}{sep}");
+            }
+
+            sb.AppendLine("            );");
         }
 
-        sb.AppendLine("            );");
+        if (cls.NeedsManagedPeer)
+        {
+            if (virtuals.Count > 0) sb.AppendLine();
+            sb.AppendLine("            InternalCalls.SetManagedPeerFactory(");
+            sb.AppendLine("                (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, uint, IntPtr>)&CreateManagedPeer);");
+        }
+
         sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine();

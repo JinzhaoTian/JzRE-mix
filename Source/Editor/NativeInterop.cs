@@ -1,4 +1,7 @@
-// NativeInterop.cs — managed entry points called from C++ via registered function pointers.
+// NativeInterop.cs — global managed entry points called from C++ via registered function pointers.
+// Per-class managed peer creation is handled by the generated bindings
+// (CreateManagedPeer callback + SetManagedPeerFactory in the .Gen.cs file).
+//
 // C# passes these as [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })] function pointers to
 // ScriptingEngine_RegisterInteropCallbacks before ScriptingEngine_Init.
 
@@ -9,14 +12,6 @@ namespace JzRE.Scripting;
 
 public static class NativeInterop
 {
-    // ── One-time initialization ──────────────────────────────────────────
-
-    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static void Init()
-    {
-        // Reserved for future use: cache reflection data, register assembly load hooks, etc.
-    }
-
     // ── Logging bridge ───────────────────────────────────────────────────
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -30,39 +25,6 @@ public static class NativeInterop
             case 2: Console.Error.WriteLine($"[NATIVE/ERR] {message}"); break;
             default: Console.WriteLine($"[NATIVE] {message}"); break;
         }
-    }
-
-    // ── Managed peer creation ────────────────────────────────────────────
-
-    /// <summary>
-    /// Called by ScriptingEngine::RegisterScript to create a managed peer for a native Script.
-    /// typeName is a UTF-8 string like "JzRE.Script".
-    /// Returns a GCHandle IntPtr stored in JzObject::_gcHandle on the C++ side.
-    /// </summary>
-    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static IntPtr CreateManagedObject(IntPtr typeNamePtr, IntPtr nativePtr, uint objectId)
-    {
-        string typeName = Marshalling.Utf8ToString(typeNamePtr);
-
-        Type? type = Type.GetType(typeName)
-                    ?? AppDomain.CurrentDomain.GetAssemblies()
-                           .Select(a => a.GetType(typeName))
-                           .FirstOrDefault(t => t != null);
-
-        if (type is null)
-        {
-            Console.Error.WriteLine($"[NativeInterop] Unknown managed type: {typeName}");
-            return IntPtr.Zero;
-        }
-
-        object? instance = Activator.CreateInstance(type);
-        if (instance is JzRE.Object obj)
-        {
-            obj.SetInternalValues(nativePtr, objectId);
-            return Marshalling.CreateGCHandle(obj);
-        }
-
-        return IntPtr.Zero;
     }
 
     // ── GCHandle management ──────────────────────────────────────────────

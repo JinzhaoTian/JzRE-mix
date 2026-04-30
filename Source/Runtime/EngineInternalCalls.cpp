@@ -4,9 +4,6 @@
 //
 // Mirrors FlaxEngine's EngineInternalCalls.cpp.
 
-#ifndef JzRE_RUNTIME_EXPORTS
-#define JzRE_RUNTIME_EXPORTS
-#endif
 #include "InternalCalls.h"
 #include "Object.h"
 #include <cstdio>

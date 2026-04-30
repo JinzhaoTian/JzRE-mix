@@ -508,9 +508,6 @@ public class Builder
         sb.AppendLine($"        \"{tpDir.Replace('\\', '/')}/bimg/include\",");
         sb.AppendLine("        \"${default}\"");
         sb.AppendLine("      ],");
-        sb.AppendLine("      \"defines\": [");
-        sb.AppendLine("        \"JzRE_RUNTIME_EXPORTS\"");
-        sb.AppendLine("      ],");
         sb.AppendLine("      \"cStandard\": \"c17\",");
         sb.AppendLine("      \"cppStandard\": \"c++17\",");
         sb.AppendLine("      \"intelliSenseMode\": \"linux-gcc-x64\",");
@@ -528,9 +525,6 @@ public class Builder
         sb.AppendLine($"        \"{tpDir.Replace('\\', '/')}/bimg/include\",");
         sb.AppendLine("        \"${default}\"");
         sb.AppendLine("      ],");
-        sb.AppendLine("      \"defines\": [");
-        sb.AppendLine("        \"JzRE_RUNTIME_EXPORTS\"");
-        sb.AppendLine("      ],");
         sb.AppendLine("      \"cStandard\": \"c17\",");
         sb.AppendLine("      \"cppStandard\": \"c++17\",");
         sb.AppendLine("      \"intelliSenseMode\": \"macos-clang-x64\",");
@@ -547,9 +541,6 @@ public class Builder
         sb.AppendLine($"        \"{tpDir.Replace('\\', '/')}/bx/include\",");
         sb.AppendLine($"        \"{tpDir.Replace('\\', '/')}/bimg/include\",");
         sb.AppendLine("        \"${default}\"");
-        sb.AppendLine("      ],");
-        sb.AppendLine("      \"defines\": [");
-        sb.AppendLine("        \"JzRE_RUNTIME_EXPORTS\"");
         sb.AppendLine("      ],");
         sb.AppendLine("      \"cStandard\": \"c17\",");
         sb.AppendLine("      \"cppStandard\": \"c++17\",");
@@ -831,10 +822,10 @@ public class Builder
             var bxConfig = cfg == "Debug" ? "BX_CONFIG_DEBUG=1" : "BX_CONFIG_DEBUG=0";
             var defines = cfg switch
             {
-                "Debug"       => $"JzRE_RUNTIME_EXPORTS;NOMINMAX;{bxConfig};_CRT_SECURE_NO_WARNINGS;_DEBUG;BUILD_DEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)",
-                "Develop" => $"JzRE_RUNTIME_EXPORTS;NOMINMAX;{bxConfig};_CRT_SECURE_NO_WARNINGS;_DEBUG;BUILD_DEVELOP;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)",
-                "Release"     => $"JzRE_RUNTIME_EXPORTS;NOMINMAX;{bxConfig};_CRT_SECURE_NO_WARNINGS;NDEBUG;BUILD_RELEASE;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)",
-                _             => $"JzRE_RUNTIME_EXPORTS;NOMINMAX;{bxConfig};_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)",
+                "Debug"       => $"NOMINMAX;{bxConfig};_CRT_SECURE_NO_WARNINGS;_DEBUG;BUILD_DEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)",
+                "Develop" => $"NOMINMAX;{bxConfig};_CRT_SECURE_NO_WARNINGS;_DEBUG;BUILD_DEVELOP;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)",
+                "Release"     => $"NOMINMAX;{bxConfig};_CRT_SECURE_NO_WARNINGS;NDEBUG;BUILD_RELEASE;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)",
+                _             => $"NOMINMAX;{bxConfig};_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)",
             };
 
             var tpLibDir = $@"{tpDir}\build\cmake";

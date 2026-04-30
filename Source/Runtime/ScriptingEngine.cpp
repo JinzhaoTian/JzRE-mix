@@ -1,6 +1,3 @@
-#ifndef JzRE_RUNTIME_EXPORTS
-#define JzRE_RUNTIME_EXPORTS
-#endif
 #include "ScriptingEngine.h"
 #include "JzRE.Runtime.Bindings.Gen.h"
 #include <algorithm>

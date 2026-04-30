@@ -9,13 +9,7 @@
 //
 // Mirrors FlaxEngine's InternalCalls.h, simplified for CoreCLR-only.
 
-#if defined(JzRE_RUNTIME_EXPORTS)
-    // Building the native library — export internal calls
-    #define DEFINE_INTERNAL_CALL(returnType) extern "C" JzRE_EXPORT returnType
-#else
-    // Consuming (e.g. from a tool that includes these headers)
-    #define DEFINE_INTERNAL_CALL(returnType) extern "C" returnType
-#endif
+#define DEFINE_INTERNAL_CALL(returnType) extern "C" JzRE_EXPORT returnType
 
 /// Null-check guard for managed→native object pointer parameters.
 /// Every internal call that receives a managed object pointer should

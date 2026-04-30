@@ -3,13 +3,6 @@
 // Architecture: this library owns the GPU device; the C# side provides the
 // native window handle (HWND / X11 Window / NSView*) via void*.
 
-// The build system passes /DJzRE_RUNTIME_EXPORTS (MSVC) or -DJzRE_RUNTIME_EXPORTS
-// (GCC/Clang) on the command line. The #ifndef guard avoids "macro redefinition"
-// warnings when the flag is already set, while still letting IDEs see the correct
-// dllexport / visibility declaration when processing this file standalone.
-#ifndef JzRE_RUNTIME_EXPORTS
-#define JzRE_RUNTIME_EXPORTS
-#endif
 #include "Renderer.h"
 #include "MeshLoader.h"
 

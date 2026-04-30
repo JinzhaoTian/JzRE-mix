@@ -2,9 +2,6 @@
 #include "Platform.h"
 
 // ── DLL export / import ───────────────────────────────────────────────────────
-// When compiling JzRE.Runtime define JzRE_RUNTIME_EXPORTS.
-// The C# editor (and any other consumer) imports without that define.
-//
 // These exported C functions are the P/Invoke boundary: the "scripting API"
 // surface that mirrors FlaxEngine's generated binding exports.
 

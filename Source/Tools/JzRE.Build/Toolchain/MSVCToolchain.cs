@@ -50,7 +50,6 @@ public class MSVCToolchain : ToolchainInfo
             "/EHsc",
             DebugInfoFlags,
             cfg,
-            "/DJzRE_RUNTIME_EXPORTS",
             $"/DBX_CONFIG_DEBUG={bxDebug}",
             "/DNOMINMAX",
             "/D_CRT_SECURE_NO_WARNINGS",

@@ -38,12 +38,9 @@
 #endif
 
 // ── DLL export / import (MSVC vs GCC/Clang visibility) ───────────────────────
+// Runtime is always built as a shared library; no dllimport path is needed.
 #if JzRE_PLATFORM_WINDOWS
-    #ifdef JzRE_RUNTIME_EXPORTS
-        #define JzRE_EXPORT __declspec(dllexport)
-    #else
-        #define JzRE_EXPORT __declspec(dllimport)
-    #endif
+    #define JzRE_EXPORT __declspec(dllexport)
     #define JzRE_IMPORT __declspec(dllimport)
 #else
     #define JzRE_EXPORT __attribute__((visibility("default")))

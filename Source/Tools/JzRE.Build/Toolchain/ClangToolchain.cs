@@ -35,7 +35,6 @@ public class ClangToolchain : ToolchainInfo
             "-shared",
             "-fvisibility=hidden",
             cfg,
-            "-DJzRE_RUNTIME_EXPORTS",
             includes,
             $"@{rsp}",
             "-o", outLib,

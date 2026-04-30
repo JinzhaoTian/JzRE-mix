@@ -14,6 +14,7 @@
 //       API_FUNCTION() void OnUpdate(float dt) override { ... }
 //   };
 
+API_CLASS()
 class Script : public JzObject
 {
 public:

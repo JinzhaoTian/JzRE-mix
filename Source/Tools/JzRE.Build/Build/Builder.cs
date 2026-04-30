@@ -131,7 +131,8 @@ public class Builder
             || content.Contains("API_STRUCT(")
             || content.Contains("API_ENUM(")
             || content.Contains("API_FUNCTION(")
-            || content.Contains("API_INTERFACE(");
+            || content.Contains("API_INTERFACE(")
+            || content.Contains("API_EXPORT(");  // standalone exported C functions
     }
 
     /// <summary>Native (C++) modules build before managed (C#) modules.</summary>

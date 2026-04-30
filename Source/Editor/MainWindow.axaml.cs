@@ -12,7 +12,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using JzRE.Editor.Interop;
+using JzRE;
 
 namespace JzRE.Editor;
 
@@ -73,7 +73,7 @@ public partial class MainWindow : Window
                 }
 
                 if (bounds.Width > 0 && bounds.Height > 0)
-                    NativeRuntime.Renderer_Resize(0, 0, (int)bounds.Width, (int)bounds.Height);
+                    JzRERuntimeNative.Renderer_Resize(0, 0, (int)bounds.Width, (int)bounds.Height);
             }
         };
 
@@ -90,9 +90,9 @@ public partial class MainWindow : Window
             if (dt > 0.1f) dt = 0.1f;
 
             if (_scriptingInitialized)
-                NativeRuntime.ScriptingEngine_Update(dt);
+                JzRERuntimeNative.ScriptingEngine_Update(dt);
 
-            NativeRuntime.Renderer_Render();
+            JzRERuntimeNative.Renderer_Render();
         };
         _renderTimer.Start();
     }
@@ -103,12 +103,12 @@ public partial class MainWindow : Window
 
         if (_scriptingInitialized)
         {
-            NativeRuntime.ScriptingEngine_Shutdown();
+            JzRERuntimeNative.ScriptingEngine_Shutdown();
             _scriptingInitialized = false;
         }
 
         _rendererInitialized = false;
-        NativeRuntime.Renderer_Destroy();
+        JzRERuntimeNative.Renderer_Destroy();
         base.OnClosed(e);
     }
 
@@ -141,21 +141,21 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!NativeRuntime.Renderer_Create(hostHandle, 0, 0, (int)bounds.Width, (int)bounds.Height))
+        if (!JzRERuntimeNative.Renderer_Create(hostHandle, 0, 0, (int)bounds.Width, (int)bounds.Height))
         {
             ShowErrorDialog("Failed to initialize renderer:\n\n" +
-                            NativeRuntime.Renderer_GetLastError());
+                            JzRERuntimeNative.Renderer_GetLastError());
             return;
         }
 
         host.UpdateNativeBounds();
         _rendererInitialized = true;
-        NativeRuntime.Renderer_SetViewAngle(_distance, _pitch, _yaw);
+        JzRERuntimeNative.Renderer_SetViewAngle(_distance, _pitch, _yaw);
 
         // Initialize the scripting engine after the renderer is ready
         if (!_scriptingInitialized)
         {
-            NativeRuntime.ScriptingEngine_Init();
+            JzRERuntimeNative.ScriptingEngine_Init();
             _scriptingInitialized = true;
         }
 
@@ -189,13 +189,13 @@ public partial class MainWindow : Window
         _lastPointer = pos;
         _yaw  += dx * 0.01f;
         _pitch = Math.Clamp(_pitch + dy * 0.01f, -1.5f, 1.5f);
-        NativeRuntime.Renderer_SetViewAngle(_distance, _pitch, _yaw);
+        JzRERuntimeNative.Renderer_SetViewAngle(_distance, _pitch, _yaw);
     }
 
     private void OnPointerWheel(object? sender, PointerWheelEventArgs e)
     {
         _distance = Math.Max(0.1f, _distance - (float)e.Delta.Y * 0.5f);
-        NativeRuntime.Renderer_SetViewAngle(_distance, _pitch, _yaw);
+        JzRERuntimeNative.Renderer_SetViewAngle(_distance, _pitch, _yaw);
     }
 
     // ── Menu Handlers ──────────────────────────────────────────────────────
@@ -281,16 +281,16 @@ public partial class MainWindow : Window
 
     private void LoadModel(string path)
     {
-        if (!NativeRuntime.Renderer_LoadFile(path))
+        if (!JzRERuntimeNative.Renderer_LoadFile(path))
         {
-            ShowErrorDialog("Failed to load model:\n\n" + NativeRuntime.Renderer_GetLastError());
+            ShowErrorDialog("Failed to load model:\n\n" + JzRERuntimeNative.Renderer_GetLastError());
             return;
         }
 
         Title = $"JzRE-mix  |  {System.IO.Path.GetFileName(path)}";
-        _distance = Math.Max(0.1f, NativeRuntime.Renderer_GetSuggestedDistance());
+        _distance = Math.Max(0.1f, JzRERuntimeNative.Renderer_GetSuggestedDistance());
         _pitch = 0.3f;
         _yaw = 0.6f;
-        NativeRuntime.Renderer_SetViewAngle(_distance, _pitch, _yaw);
+        JzRERuntimeNative.Renderer_SetViewAngle(_distance, _pitch, _yaw);
     }
 }

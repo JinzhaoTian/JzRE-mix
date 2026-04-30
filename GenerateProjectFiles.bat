@@ -26,7 +26,7 @@ echo.
 echo ===== Done =====
 echo.
 echo Usage:
-echo   GenerateProjectFiles          - platform default
+echo   GenerateProjectFiles          - platform default (Visual Studio 2022)
 echo   GenerateProjectFiles -vs2022  - force Visual Studio 2022
 echo   GenerateProjectFiles -vscode  - force Visual Studio Code
 

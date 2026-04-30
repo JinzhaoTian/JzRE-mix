@@ -1,5 +1,6 @@
 #pragma once
 #include "Script.h"
+#include "ScriptingEngine.Exporter.h"
 #include <vector>
 
 // ── ScriptingEngine — manages the script lifecycle ─────────────────────────
@@ -48,28 +49,26 @@ public:
     float GetDeltaTime() const { return _deltaTime; }
     uint64_t GetFrameCount() const { return _frameCount; }
 
+    // ── Managed interop callbacks ────────────────────────────────────────
+    typedef void (*FreeGCHandleFn)(void* gcHandle);
+    typedef void (*LogFn)(int level, const char* message);
+
+    void RegisterInteropCallbacks(void* freeGCHandleFn, void* logFn)
+    {
+        _interop.FreeGCHandle = reinterpret_cast<FreeGCHandleFn>(freeGCHandleFn);
+        _interop.Log          = reinterpret_cast<LogFn>(logFn);
+    }
+
+    FreeGCHandleFn GetFreeGCHandle() const { return _interop.FreeGCHandle; }
+
 private:
     ScriptingEngine() = default;
+
+    struct InteropCallbacks { FreeGCHandleFn FreeGCHandle = nullptr; LogFn Log = nullptr; };
+    InteropCallbacks _interop;
 
     std::vector<Script*> _scripts;
     float _deltaTime = 0.0f;
     uint64_t _frameCount = 0;
     bool _initialized = false;
 };
-
-// ── Exported API (called from C# via P/Invoke) ────────────────────────────
-
-/// Initialize the scripting engine. Called once from the editor.
-API_EXPORT() void ScriptingEngine_Init();
-
-/// Tick the scripting engine. Called each frame before render.
-API_EXPORT() void ScriptingEngine_Update(float deltaTime);
-
-/// Shut down the scripting engine. Called on editor close.
-API_EXPORT() void ScriptingEngine_Shutdown();
-
-/// Register global interop callbacks.  Managed peer creation is handled by
-/// per-class generated factories (e.g. Script_CreateManagedPeer).
-///   freeGCHandle_fn : void (void* gcHandle)
-///   log_fn          : void (int level, const char* message)
-API_EXPORT() void ScriptingEngine_RegisterInteropCallbacks(void* freeGCHandle_fn, void* log_fn);

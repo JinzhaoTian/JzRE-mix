@@ -1,4 +1,5 @@
 #pragma once
+#include "API.h"
 #include <cstdint>
 
 // ── JzObject — root class of the engine object hierarchy ─────────────────────
@@ -13,6 +14,7 @@
 //                  created by ObjectInternal_Create and the GCHandle pins
 //                  the managed object.
 
+API_CLASS()
 class JzObject
 {
 public:
@@ -24,32 +26,32 @@ public:
 
     // ── Managed peer ─────────────────────────────────────────────────
 
-    /// Returns the GCHandle to the managed peer, or nullptr if none exists.
+    API_PROPERTY()
     void* GetManagedInstance() const { return _gcHandle; }
 
-    /// Returns true if this object has a live managed peer.
+    API_PROPERTY()
     bool HasManagedInstance() const { return _gcHandle != nullptr; }
 
-    /// Called by the managed peer when the C# object is collected or disposed.
-    /// The default implementation does nothing; subclasses override to clean up.
+    API_FUNCTION()
     virtual void OnManagedInstanceDeleted();
 
     // ── Object identity ──────────────────────────────────────────────
 
+    API_PROPERTY()
     uint32_t GetObjectId() const { return _objectId; }
+
+    API_PROPERTY()
     const char* GetTypeName() const { return _typeName; }
 
     // ── Static helpers ───────────────────────────────────────────────
 
-    /// Look up a JzObject by its managed peer pointer.
-    /// Returns nullptr if not found.
+    API_FUNCTION()
     static JzObject* FromManaged(void* managedObj);
 
-    /// Stores the GCHandle for the managed peer.
-    /// Called by ScriptingEngine after NativeInterop creates the managed peer.
+    API_FUNCTION()
     void SetManagedInstance(void* gcHandle);
 
-    /// Frees the GCHandle. Called from ~JzObject or from OnManagedInstanceDeleted.
+    API_FUNCTION()
     void DestroyManaged();
 
 protected:

@@ -1,11 +1,10 @@
-// Marshalling.cs — managed-side utilities for native interop.
-// Mirrors FlaxEngine's marshalling helpers in NativeInterop.Marshallers.cs.
+// MarshallingUtils.cs — managed-side utilities for native interop.
 
 using System.Runtime.InteropServices;
 
 namespace JzRE.Scripting;
 
-internal static class Marshalling
+internal static class MarshallingUtils
 {
     /// <summary>Convert a native UTF-8 string pointer to a managed string.</summary>
     internal static string Utf8ToString(IntPtr ptr)

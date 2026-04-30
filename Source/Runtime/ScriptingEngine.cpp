@@ -4,30 +4,6 @@
 #include <cstdio>
 #include <cstdint>
 
-// ── NativeInterop callback types ──────────────────────────────────────────────
-typedef void  (*NI_FreeGCHandle_Fn)(void* gcHandle);
-typedef void  (*NI_Log_Fn)(int level, const char* message);
-
-struct NativeInteropCallbacks
-{
-    NI_FreeGCHandle_Fn        FreeGCHandle        = nullptr;
-    NI_Log_Fn                 Log                 = nullptr;
-};
-
-static NativeInteropCallbacks s_interop;
-
-// ── Script implementation ────────────────────────────────────────────────────
-
-Script::Script()
-{
-    _typeName = "Script";
-}
-
-void Script::OnEnable()  {}
-void Script::OnDisable() {}
-void Script::OnUpdate(float /*deltaTime*/) {}
-void Script::OnDestroy() {}
-
 // ── ScriptingEngine implementation ───────────────────────────────────────────
 
 ScriptingEngine& ScriptingEngine::Get()
@@ -76,8 +52,8 @@ void ScriptingEngine::Shutdown()
         if (*it)
         {
             (*it)->OnDestroy();
-            if (s_interop.FreeGCHandle && (*it)->HasManagedInstance())
-                s_interop.FreeGCHandle((*it)->GetManagedInstance());
+            if (_interop.FreeGCHandle && (*it)->HasManagedInstance())
+                _interop.FreeGCHandle((*it)->GetManagedInstance());
             delete *it;
         }
     }
@@ -123,27 +99,4 @@ Script* ScriptingEngine::FindScript(uint32_t objectId) const
             return s;
     }
     return nullptr;
-}
-
-// ── Exported C API ───────────────────────────────────────────────────────────
-
-void ScriptingEngine_Init()
-{
-    ScriptingEngine::Get().Initialize();
-}
-
-void ScriptingEngine_Update(float deltaTime)
-{
-    ScriptingEngine::Get().Update(deltaTime);
-}
-
-void ScriptingEngine_Shutdown()
-{
-    ScriptingEngine::Get().Shutdown();
-}
-
-void ScriptingEngine_RegisterInteropCallbacks(void* freeGCHandle_fn, void* log_fn)
-{
-    s_interop.FreeGCHandle = reinterpret_cast<NI_FreeGCHandle_Fn>(freeGCHandle_fn);
-    s_interop.Log          = reinterpret_cast<NI_Log_Fn>(log_fn);
 }

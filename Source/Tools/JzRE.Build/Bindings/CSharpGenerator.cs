@@ -64,8 +64,8 @@ public class CSharpGenerator
         bool needsStaticCtor = virtuals.Count > 0 || cls.NeedsManagedPeer;
 
         sb.AppendLine($"/// <summary>Bindings for native {_module.Namespace}::{cls.Name}.</summary>");
-        // No base type here — declared in the hand-written partial file.
-        sb.AppendLine($"public partial class {cls.Name}");
+        var baseDecl = cls.ManagedBaseType != null ? $" : {cls.ManagedBaseType}" : "";
+        sb.AppendLine($"public partial class {cls.Name}{baseDecl}");
         sb.AppendLine("{");
 
         // ── nested InternalCalls ──
@@ -87,11 +87,21 @@ public class CSharpGenerator
         sb.AppendLine("    }");
         sb.AppendLine();
 
-        // ── public method wrappers (non-virtual, non-constructor only) ──
-        // Virtual methods and properties are declared in the hand-written partial
-        // class; regenerating them would cause duplicate-member compile errors.
+        // ── public method wrappers ──
+        // Non-virtual methods delegate to native via InternalCalls.
         foreach (var m in cls.Methods.Where(m => !m.IsVirtual && !m.IsConstructor))
             EmitMethodWrapper(sb, cls, m);
+
+        // Virtual methods get empty stubs here; subclasses override them.
+        // The managed vtable callback (EmitManagedCallback) dispatches to
+        // these instance virtuals rather than calling InternalCalls directly.
+        if (virtuals.Count > 0)
+        {
+            sb.AppendLine("    // ── Virtual stubs (override in subclass to intercept) ──");
+            sb.AppendLine();
+            foreach (var v in virtuals)
+                EmitVirtualStub(sb, v);
+        }
 
         // ── virtual dispatch infrastructure ──
         if (virtuals.Count > 0)
@@ -189,6 +199,22 @@ public class CSharpGenerator
         else
             sb.AppendLine($"    public {mods}void {m.Name}({decls}) => {body};");
 
+        sb.AppendLine();
+    }
+
+    // ── Virtual stub ──────────────────────────────────────────────────────────
+
+    private static void EmitVirtualStub(StringBuilder sb, FunctionInfo v)
+    {
+        var ret    = CsT(v.ReturnType);
+        var hasRet = v.ReturnType != "void";
+        var decls  = string.Join(", ", v.Parameters.Select(FormatDeclParam));
+
+        sb.AppendLine("    /// <summary>Override to intercept native → managed calls.</summary>");
+        if (hasRet)
+            sb.AppendLine($"    public virtual {ret} {v.Name}({decls}) => default;");
+        else
+            sb.AppendLine($"    public virtual void {v.Name}({decls}) {{ }}");
         sb.AppendLine();
     }
 

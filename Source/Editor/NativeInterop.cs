@@ -17,7 +17,7 @@ public static class NativeInterop
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static void Log(int level, IntPtr messagePtr)
     {
-        string message = Marshalling.Utf8ToString(messagePtr);
+        string message = MarshallingUtils.Utf8ToString(messagePtr);
         switch (level)
         {
             case 0: Console.WriteLine($"[NATIVE] {message}"); break;
@@ -32,6 +32,6 @@ public static class NativeInterop
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static void FreeGCHandle(IntPtr handle)
     {
-        Marshalling.FreeGCHandle(handle);
+        MarshallingUtils.FreeGCHandle(handle);
     }
 }

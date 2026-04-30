@@ -11,7 +11,7 @@ public enum ApiTypeKind { Class, Struct, Enum, Interface }
 public enum ParamKind   { In, Out, Ref }
 
 // ── Standalone exported C function (API_EXPORT()) ────────────────────────────
-// Represents free functions like: API_EXPORT() bool Renderer_Create(...)
+// Represents free functions like: API_EXPORT() bool RenderEngine_Create(...)
 // These get a flat [LibraryImport] stub rather than a class wrapper.
 
 public class FreeFunctionInfo

@@ -235,7 +235,6 @@ public sealed class HeaderParser
             Namespace      = _namespace,
             NativeModule   = _moduleName,
             Attributes     = attrs,
-            ManagedBaseType = null,
         };
 
         // optional base class:  : public BaseClass

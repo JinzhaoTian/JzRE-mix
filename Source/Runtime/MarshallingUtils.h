@@ -5,13 +5,12 @@
 #include <cstring>
 
 // ── Marshalling utilities for C++ ↔ C# data conversion ─────────────────────
-// Mirrors FlaxEngine's MUtils — provides helpers for converting between
-// native types and the representations used by the managed interop bridge.
+// Helpers for converting between native types and the representations used by
+// the managed interop bridge.
 //
-// These are used by internal call implementations (EngineInternalCalls.cpp)
-// and the generated C++ glue code (Phase 3).
+// These are used by exporter implementations and the generated C++ glue code.
 
-namespace MUtils
+namespace MarshallingUtils
 {
     // ── String conversion ──────────────────────────────────────────────
     // Managed strings arrive as UTF-8 const char*.  To pass strings back
@@ -47,8 +46,8 @@ namespace MUtils
     template<typename T>
     struct ManagedArray
     {
-        T*      Data   = nullptr;
-        int     Length = 0;
+        T*  Data   = nullptr;
+        int Length = 0;
     };
 
     template<typename T>

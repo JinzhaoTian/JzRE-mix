@@ -1,14 +1,6 @@
 #pragma once
 #include "Platform.h"
 
-// ── DLL export / import ───────────────────────────────────────────────────────
-// These exported C functions are the P/Invoke boundary: the "scripting API"
-// surface that mirrors FlaxEngine's generated binding exports.
-
-#ifndef JzRE_API
-    #define JzRE_API JzRE_EXPORT
-#endif
-
 // ── API annotation macros ─────────────────────────────────────────────────────
 // These are parse-time markers for the bindings generator (Phase 3) and the
 // managed interop bridge.  With the exception of API_EXPORT(), all macros
@@ -27,7 +19,7 @@
 
 // Exported standalone function with C linkage (P/Invoke boundary).
 // Use this for free functions only — NOT for class member functions.
-#define API_EXPORT()  extern "C" JzRE_API
+#define API_EXPORT()  extern "C" JzRE_EXPORT
 
 // Marker macros — parse-time only
 #define API_CLASS(...)                           // class eligible for binding

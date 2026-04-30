@@ -81,7 +81,7 @@ public abstract partial class Object : IDisposable
         }
     }
 
-    // ── Internal calls (implemented in EngineInternalCalls.cpp) ────────────
+    // ── Exported native calls (implemented in ObjectExporter.cpp) ─────────
 
     [LibraryImport("JzRE.Runtime", EntryPoint = "ObjectInternal_Destroy")]
     private static partial void Internal_Destroy(IntPtr obj, float timeLeft);

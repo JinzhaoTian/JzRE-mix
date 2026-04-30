@@ -57,3 +57,25 @@ JzObject* JzObject::FromManaged(void* managedObj)
     auto it = s_managedToNative.find(managedObj);
     return it != s_managedToNative.end() ? it->second : nullptr;
 }
+
+// ── Exported C API (P/Invoke boundary) ─────────────────────────────────────
+
+API_EXPORT() void ObjectInternal_Destroy(void* obj, float /*timeLeft*/)
+{
+    if (!obj) return;
+    auto* native = static_cast<JzObject*>(obj);
+    native->OnManagedInstanceDeleted();
+    delete native;
+}
+
+API_EXPORT() void* ObjectInternal_FindObject(void* nativePtr)
+{
+    if (!nativePtr) return nullptr;
+    return static_cast<JzObject*>(nativePtr)->GetManagedInstance();
+}
+
+API_EXPORT() void ObjectInternal_ManagedInstanceDeleted(void* obj)
+{
+    if (!obj) return;
+    static_cast<JzObject*>(obj)->OnManagedInstanceDeleted();
+}

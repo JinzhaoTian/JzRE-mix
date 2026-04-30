@@ -20,8 +20,8 @@ namespace JzRE.Editor;
 public partial class MainWindow : Window
 {
     private DispatcherTimer? _renderTimer;
-    private bool _rendererInitialized;
-    private bool _rendererInitScheduled;
+    private bool _renderEngineInitialized;
+    private bool _renderEngineInitScheduled;
     private readonly string? _initialModelPath;
     private DateTime _lastFrameTime;
     private bool _scriptingInitialized;
@@ -52,7 +52,7 @@ public partial class MainWindow : Window
 
         var host = RenderHost;
 
-        ScheduleRendererInitialization();
+        ScheduleRenderEngineInitialization();
 
         // Pointer input for orbit camera
         host.PointerPressed  += OnPointerPressed;
@@ -67,14 +67,14 @@ public partial class MainWindow : Window
             {
                 host.UpdateNativeBounds();
                 var bounds = host.Bounds;
-                if (!_rendererInitialized)
+                if (!_renderEngineInitialized)
                 {
-                    ScheduleRendererInitialization();
+                    ScheduleRenderEngineInitialization();
                     return;
                 }
 
                 if (bounds.Width > 0 && bounds.Height > 0)
-                    JzRERuntimeNative.Renderer_Resize(0, 0, (int)bounds.Width, (int)bounds.Height);
+                    JzRERuntimeNative.RenderEngine_Resize(0, 0, (int)bounds.Width, (int)bounds.Height);
             }
         };
 
@@ -93,7 +93,7 @@ public partial class MainWindow : Window
             if (_scriptingInitialized)
                 JzRERuntimeNative.ScriptingEngine_Update(dt);
 
-            JzRERuntimeNative.Renderer_Render();
+            JzRERuntimeNative.RenderEngine_Render();
         };
         _renderTimer.Start();
     }
@@ -108,27 +108,27 @@ public partial class MainWindow : Window
             _scriptingInitialized = false;
         }
 
-        _rendererInitialized = false;
-        JzRERuntimeNative.Renderer_Destroy();
+        _renderEngineInitialized = false;
+        JzRERuntimeNative.RenderEngine_Destroy();
         base.OnClosed(e);
     }
 
-    private void ScheduleRendererInitialization()
+    private void ScheduleRenderEngineInitialization()
     {
-        if (_rendererInitialized || _rendererInitScheduled)
+        if (_renderEngineInitialized || _renderEngineInitScheduled)
             return;
 
-        _rendererInitScheduled = true;
+        _renderEngineInitScheduled = true;
         Dispatcher.UIThread.Post(() =>
         {
-            _rendererInitScheduled = false;
-            TryInitializeRenderer();
+            _renderEngineInitScheduled = false;
+            TryInitializeRenderEngine();
         }, DispatcherPriority.Loaded);
     }
 
-    private void TryInitializeRenderer()
+    private void TryInitializeRenderEngine()
     {
-        if (_rendererInitialized)
+        if (_renderEngineInitialized)
             return;
 
         var host = RenderHost;
@@ -138,20 +138,20 @@ public partial class MainWindow : Window
         if (hostHandle == IntPtr.Zero || bounds.Width <= 0 || bounds.Height <= 0)
         {
             if (IsLoaded)
-                Dispatcher.UIThread.Post(TryInitializeRenderer, DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(TryInitializeRenderEngine, DispatcherPriority.Background);
             return;
         }
 
-        if (!JzRERuntimeNative.Renderer_Create(hostHandle, 0, 0, (int)bounds.Width, (int)bounds.Height))
+        if (!JzRERuntimeNative.RenderEngine_Create(hostHandle, 0, 0, (int)bounds.Width, (int)bounds.Height))
         {
-            ShowErrorDialog("Failed to initialize renderer:\n\n" +
-                            JzRERuntimeNative.Renderer_GetLastError());
+            ShowErrorDialog("Failed to initialize render engine:\n\n" +
+                            JzRERuntimeNative.RenderEngine_GetLastError());
             return;
         }
 
         host.UpdateNativeBounds();
-        _rendererInitialized = true;
-        JzRERuntimeNative.Renderer_SetViewAngle(_distance, _pitch, _yaw);
+        _renderEngineInitialized = true;
+        JzRERuntimeNative.RenderEngine_SetViewAngle(_distance, _pitch, _yaw);
 
         // Initialize the scripting engine after the renderer is ready
         if (!_scriptingInitialized)
@@ -197,22 +197,22 @@ public partial class MainWindow : Window
         _lastPointer = pos;
         _yaw  += dx * 0.01f;
         _pitch = Math.Clamp(_pitch + dy * 0.01f, -1.5f, 1.5f);
-        JzRERuntimeNative.Renderer_SetViewAngle(_distance, _pitch, _yaw);
+        JzRERuntimeNative.RenderEngine_SetViewAngle(_distance, _pitch, _yaw);
     }
 
     private void OnPointerWheel(object? sender, PointerWheelEventArgs e)
     {
         _distance = Math.Max(0.1f, _distance - (float)e.Delta.Y * 0.5f);
-        JzRERuntimeNative.Renderer_SetViewAngle(_distance, _pitch, _yaw);
+        JzRERuntimeNative.RenderEngine_SetViewAngle(_distance, _pitch, _yaw);
     }
 
     // ── Menu Handlers ──────────────────────────────────────────────────────
 
     private async void OnOpenFile(object? sender, RoutedEventArgs e)
     {
-        if (!_rendererInitialized)
+        if (!_renderEngineInitialized)
         {
-            ShowErrorDialog("Renderer is still initializing. Please try again in a moment.");
+            ShowErrorDialog("Render engine is still initializing. Please try again in a moment.");
             return;
         }
 
@@ -289,16 +289,16 @@ public partial class MainWindow : Window
 
     private void LoadModel(string path)
     {
-        if (!JzRERuntimeNative.Renderer_LoadFile(path))
+        if (!JzRERuntimeNative.RenderEngine_LoadFile(path))
         {
-            ShowErrorDialog("Failed to load model:\n\n" + JzRERuntimeNative.Renderer_GetLastError());
+            ShowErrorDialog("Failed to load model:\n\n" + JzRERuntimeNative.RenderEngine_GetLastError());
             return;
         }
 
         Title = $"JzRE-mix  |  {System.IO.Path.GetFileName(path)}";
-        _distance = Math.Max(0.1f, JzRERuntimeNative.Renderer_GetSuggestedDistance());
+        _distance = Math.Max(0.1f, JzRERuntimeNative.RenderEngine_GetSuggestedDistance());
         _pitch = 0.3f;
         _yaw = 0.6f;
-        JzRERuntimeNative.Renderer_SetViewAngle(_distance, _pitch, _yaw);
+        JzRERuntimeNative.RenderEngine_SetViewAngle(_distance, _pitch, _yaw);
     }
 }

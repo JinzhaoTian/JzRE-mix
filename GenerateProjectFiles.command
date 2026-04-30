@@ -19,13 +19,14 @@ cd "$(dirname "$0")"
 echo "[1/3] Building JzRE.Build tool..."
 dotnet build Source/Tools/JzRE.Build/JzRE.Build.csproj -c Release -o Binaries/Tools/JzRE.Build --nologo -v quiet
 
-# Step 2: Generate project files (platform-appropriate format)
-echo "[2/3] Generating project files..."
-dotnet run --project Source/Tools/JzRE.Build -- -genproject --workspace "$(pwd)" "$@"
-
-# Step 3: Build C# bindings so the IDE opens with generated glue code ready.
-echo "[3/3] Building C# bindings..."
+# Step 2: Build C# bindings (must run before project generation so
+# that *.Bindings.Gen.cpp files are picked up by the vcxproj).
+echo "[2/3] Building C# bindings..."
 dotnet run --project Source/Tools/JzRE.Build -- -BuildBindingsOnly --workspace "$(pwd)"
+
+# Step 3: Generate project files (platform-appropriate format)
+echo "[3/3] Generating project files..."
+dotnet run --project Source/Tools/JzRE.Build -- -genproject --workspace "$(pwd)" "$@"
 
 echo ""
 echo "===== Done ====="

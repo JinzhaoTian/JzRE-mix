@@ -211,7 +211,8 @@ public class Builder
 
         // Determine project format: explicit CLI flag or platform default.
         // Mirrors FlaxEngine: -vscode / -vs2022 flags override Platform.DefaultProjectFormat.
-        var format = _opts.ProjectFormat ?? ProjectGeneratorFactory.GetPlatformDefault();
+        _opts.ProjectFormat ??= ProjectGeneratorFactory.GetPlatformDefault();
+        var format = _opts.ProjectFormat.Value;
         Console.WriteLine($"  Project format: {format}");
 
         switch (format)

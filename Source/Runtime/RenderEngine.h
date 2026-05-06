@@ -1,6 +1,5 @@
 #pragma once
 #include "API.h"
-#include "RenderEngine.Exporter.h"
 #include <bgfx/bgfx.h>
 #include <string>
 
@@ -8,24 +7,28 @@
 /// program, and vertex/index buffers. The class is a singleton — only one
 /// instance exists per process.
 ///
-/// The flat C API in RenderEngine.Exporter.h is the P/Invoke boundary; each function
-/// delegates to the singleton instance below.
+/// API_CLASS(Static) + API_FUNCTION() static methods form the P/Invoke boundary;
+/// the bindings generator produces the C++ glue and C# partial class automatically.
+API_CLASS(Static)
 class RenderEngine
 {
 public:
     static RenderEngine& Get();
 
-    bool Create(void* nativeWindow, int x, int y, int width, int height);
-    void Destroy();
+    // ── P/Invoke API (generated glue calls these) ──────────────────────────
+
+    API_FUNCTION() static bool   Create(void* nativeWindow, int x, int y, int width, int height);
+    API_FUNCTION() static void   Destroy();
+    API_FUNCTION() static bool   LoadFile(const char* path);
+    API_FUNCTION() static void   Render();
+    API_FUNCTION() static void   Resize(int x, int y, int width, int height);
+    API_FUNCTION() static void   SetViewAngle(float distance, float pitch, float yaw);
+    API_FUNCTION() static float  GetSuggestedDistance();
+    API_FUNCTION() static const char* GetLastError();
+
+    // ── Internal (non-API) ─────────────────────────────────────────────────
+
     bool IsInitialized() const { return _initialized; }
-
-    bool LoadFile(const char* path);
-    void Render();
-    void Resize(int x, int y, int width, int height);
-
-    void SetViewAngle(float distance, float pitch, float yaw);
-    float GetSuggestedDistance() const { return _distance; }
-    const char* GetLastError() const;
 
 private:
     RenderEngine() = default;
@@ -34,6 +37,15 @@ private:
     void SetError(const char* msg);
     bgfx::ShaderHandle LoadShader(const char* path);
     bool LoadProgram(const char* vsPath, const char* fsPath);
+
+    // Instance methods (called by static API wrappers)
+    bool   CreateImpl(void* nativeWindow, int x, int y, int width, int height);
+    void   DestroyImpl();
+    bool   LoadFileImpl(const char* path);
+    void   RenderImpl();
+    void   ResizeImpl(int x, int y, int width, int height);
+    float  GetSuggestedDistanceImpl() const { return _distance; }
+    const char* GetLastErrorImpl() const;
 
     // ── GPU vertex layout ────────────────────────────────────────────────
     struct Vertex { float x, y, z; float nx, ny, nz; };

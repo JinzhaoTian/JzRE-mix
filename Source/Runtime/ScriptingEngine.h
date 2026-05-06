@@ -1,16 +1,15 @@
 #pragma once
 #include "Script.h"
-#include "ScriptingEngine.Exporter.h"
 #include <vector>
 
 // ── ScriptingEngine — manages the script lifecycle ─────────────────────────
 // Mirrors FlaxEngine's ScriptingService.  Owns the list of active Script
 // objects and invokes their lifecycle methods each frame.
 //
-// In a full engine this would also own the CLR host (hostfxr), assembly
-// loading, and managed type discovery.  For Phase 4 it provides the core
-// Script management that both native and managed scripts plug into.
+// API_CLASS(Static) + API_FUNCTION() static methods form the P/Invoke boundary;
+// the bindings generator produces the C++ glue and C# partial class automatically.
 
+API_CLASS(Static)
 class ScriptingEngine
 {
 public:
@@ -18,19 +17,14 @@ public:
 
     static ScriptingEngine& Get();
 
-    // ── Lifecycle ────────────────────────────────────────────────────
+    // ── P/Invoke API (generated glue calls these) ────────────────────
 
-    /// One-time initialization. Call after the native runtime is ready.
-    void Initialize();
+    API_FUNCTION() static void Init();
+    API_FUNCTION() static void Update(float deltaTime);
+    API_FUNCTION() static void Shutdown();
+    API_FUNCTION() static void RegisterInteropCallbacks(void* freeGCHandle_fn, void* log_fn);
 
-    /// One-frame tick. Calls OnUpdate on all enabled scripts.
-    /// Must be called from the main thread (same thread as the render loop).
-    void Update(float deltaTime);
-
-    /// Shut down. Calls OnDestroy on all scripts and clears the registry.
-    void Shutdown();
-
-    // ── Script management ────────────────────────────────────────────
+    // ── Internal (non-API) ────────────────────────────────────────────
 
     /// Register a script for lifecycle updates.
     void RegisterScript(Script* script);
@@ -49,23 +43,29 @@ public:
     float GetDeltaTime() const { return _deltaTime; }
     uint64_t GetFrameCount() const { return _frameCount; }
 
-    // ── Managed interop callbacks ────────────────────────────────────────
+    // ── Managed interop callbacks ────────────────────────────────────
+
     typedef void (*FreeGCHandleFn)(void* gcHandle);
     typedef void (*LogFn)(int level, const char* message);
-
-    void RegisterInteropCallbacks(void* freeGCHandleFn, void* logFn)
-    {
-        _interop.FreeGCHandle = reinterpret_cast<FreeGCHandleFn>(freeGCHandleFn);
-        _interop.Log          = reinterpret_cast<LogFn>(logFn);
-    }
 
     FreeGCHandleFn GetFreeGCHandle() const { return _interop.FreeGCHandle; }
 
 private:
     ScriptingEngine() = default;
 
+    void RegisterInteropCallbacksImpl(void* freeGCHandleFn, void* logFn)
+    {
+        _interop.FreeGCHandle = reinterpret_cast<FreeGCHandleFn>(freeGCHandleFn);
+        _interop.Log          = reinterpret_cast<LogFn>(logFn);
+    }
+
     struct InteropCallbacks { FreeGCHandleFn FreeGCHandle = nullptr; LogFn Log = nullptr; };
     InteropCallbacks _interop;
+
+    // Instance methods (called by static API wrappers)
+    void InitializeImpl();
+    void UpdateImpl(float deltaTime);
+    void ShutdownImpl();
 
     std::vector<Script*> _scripts;
     float _deltaTime = 0.0f;

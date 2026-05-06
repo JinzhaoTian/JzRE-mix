@@ -39,7 +39,17 @@ public class CSharpGenerator
         sb.AppendLine($"namespace {_module.Namespace};");
         sb.AppendLine();
 
-        foreach (var cls in _module.AllClasses)
+        // Cross-platform DLL resolver — must be registered only once per assembly.
+        // Emitted before all classes so it runs before any [LibraryImport] is resolved.
+        var staticClasses = _module.AllClasses.Where(c => c.IsStaticClass).ToList();
+        var nonStaticClasses = _module.AllClasses.Where(c => !c.IsStaticClass).ToList();
+        if (staticClasses.Count > 0)
+            EmitNativeLibraryConfig(sb);
+
+        foreach (var cls in nonStaticClasses)
+            EmitClass(sb, cls);
+
+        foreach (var cls in staticClasses)
             EmitClass(sb, cls);
 
         foreach (var st in _module.AllStructs)
@@ -61,68 +71,89 @@ public class CSharpGenerator
     private void EmitClass(StringBuilder sb, ClassInfo cls)
     {
         var virtuals = cls.Methods.Where(m => m.IsVirtual).ToList();
-        bool needsStaticCtor = virtuals.Count > 0 || cls.NeedsManagedPeer;
+        bool needsStaticCtor = (virtuals.Count > 0 || cls.NeedsManagedPeer) && !cls.IsStaticClass;
 
         sb.AppendLine($"/// <summary>Bindings for native {_module.Namespace}::{cls.Name}.</summary>");
-        var baseDecl = cls.ManagedBaseType != null ? $" : {cls.ManagedBaseType}" : "";
-        sb.AppendLine($"public partial class {cls.Name}{baseDecl}");
-        sb.AppendLine("{");
 
-        // ── nested InternalCalls ──
-        sb.AppendLine("    private static partial class InternalCalls");
-        sb.AppendLine("    {");
-
-        foreach (var m in cls.Methods)
-            EmitLibraryImport(sb, m, "        ");
-
-        foreach (var v in virtuals)
-            EmitCallBaseImport(sb, v, "        ");
-
-        if (virtuals.Count > 0)
-            EmitSetVTableImport(sb, cls, virtuals, "        ");
-
-        if (cls.NeedsManagedPeer)
-            EmitSetPeerFactoryImport(sb, cls, "        ");
-
-        sb.AppendLine("    }");
-        sb.AppendLine();
-
-        // ── public method wrappers ──
-        // Non-virtual methods delegate to native via InternalCalls.
-        foreach (var m in cls.Methods.Where(m => !m.IsVirtual && !m.IsConstructor))
-            EmitMethodWrapper(sb, cls, m);
-
-        // Virtual methods get empty stubs here; subclasses override them.
-        // The managed vtable callback (EmitManagedCallback) dispatches to
-        // these instance virtuals rather than calling InternalCalls directly.
-        if (virtuals.Count > 0)
+        if (cls.IsStaticClass)
         {
-            sb.AppendLine("    // ── Virtual stubs (override in subclass to intercept) ──");
+            sb.AppendLine($"public static partial class {cls.Name}");
+            sb.AppendLine("{");
+
+            // ── nested InternalCalls ──
+            sb.AppendLine("    private static partial class InternalCalls");
+            sb.AppendLine("    {");
+
+            foreach (var m in cls.Methods)
+                EmitLibraryImport(sb, m, "        ");
+
+            sb.AppendLine("    }");
             sb.AppendLine();
+
+            // ── public method wrappers ──
+            foreach (var m in cls.Methods.Where(m => !m.IsConstructor))
+                EmitMethodWrapper(sb, cls, m);
+
+        }
+        else
+        {
+            var baseDecl = cls.ManagedBaseType != null ? $" : {cls.ManagedBaseType}" : "";
+            sb.AppendLine($"public partial class {cls.Name}{baseDecl}");
+            sb.AppendLine("{");
+
+            // ── nested InternalCalls ──
+            sb.AppendLine("    private static partial class InternalCalls");
+            sb.AppendLine("    {");
+
+            foreach (var m in cls.Methods)
+                EmitLibraryImport(sb, m, "        ");
+
             foreach (var v in virtuals)
-                EmitVirtualStub(sb, v);
-        }
+                EmitCallBaseImport(sb, v, "        ");
 
-        // ── virtual dispatch infrastructure ──
-        if (virtuals.Count > 0)
-        {
-            sb.AppendLine("    // ── Managed vtable callbacks (invoked from C++ via function pointer) ──────");
+            if (virtuals.Count > 0)
+                EmitSetVTableImport(sb, cls, virtuals, "        ");
+
+            if (cls.NeedsManagedPeer)
+                EmitSetPeerFactoryImport(sb, cls, "        ");
+
+            sb.AppendLine("    }");
             sb.AppendLine();
-            foreach (var v in virtuals)
-                EmitManagedCallback(sb, cls, v);
-        }
 
-        // ── managed peer factory ──
-        if (cls.NeedsManagedPeer)
-        {
-            sb.AppendLine("    // ── Managed peer factory (invoked from C++ to create managed wrapper) ─────");
-            sb.AppendLine();
-            EmitManagedPeerCallback(sb, cls);
-        }
+            // ── public method wrappers ──
+            foreach (var m in cls.Methods.Where(m => !m.IsVirtual && !m.IsConstructor))
+                EmitMethodWrapper(sb, cls, m);
 
-        // ── static constructor ──
-        if (needsStaticCtor)
-            EmitStaticCtor(sb, cls, virtuals);
+            // Virtual stubs
+            if (virtuals.Count > 0)
+            {
+                sb.AppendLine("    // ── Virtual stubs (override in subclass to intercept) ──");
+                sb.AppendLine();
+                foreach (var v in virtuals)
+                    EmitVirtualStub(sb, v);
+            }
+
+            // ── virtual dispatch infrastructure ──
+            if (virtuals.Count > 0)
+            {
+                sb.AppendLine("    // ── Managed vtable callbacks (invoked from C++ via function pointer) ──────");
+                sb.AppendLine();
+                foreach (var v in virtuals)
+                    EmitManagedCallback(sb, cls, v);
+            }
+
+            // ── managed peer factory ──
+            if (cls.NeedsManagedPeer)
+            {
+                sb.AppendLine("    // ── Managed peer factory (invoked from C++ to create managed wrapper) ─────");
+                sb.AppendLine();
+                EmitManagedPeerCallback(sb, cls);
+            }
+
+            // ── static constructor ──
+            if (needsStaticCtor)
+                EmitStaticCtor(sb, cls, virtuals);
+        }
 
         sb.AppendLine("}");
         sb.AppendLine();
@@ -338,6 +369,34 @@ public class CSharpGenerator
         sb.AppendLine("{");
         foreach (var (name, val) in e.Values)
             sb.AppendLine($"    {name} = {val},");
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    // ── Native library config (cross-platform DLL resolver) ─────────────────────
+
+    /// <summary>
+    /// Emits a dedicated static class that registers a cross-platform DLL resolver
+    /// via <c>NativeLibrary.SetDllImportResolver</c>.  This runs once per assembly,
+    /// before any <c>[LibraryImport]</c> resolution occurs.
+    /// </summary>
+    private void EmitNativeLibraryConfig(StringBuilder sb)
+    {
+        var lib = _module.NativeLibraryName;
+        sb.AppendLine("/// <summary>Per-assembly native library resolver (registered once).</summary>");
+        sb.AppendLine($"internal static class {lib.Replace(".", "").Replace("-", "")}Config");
+        sb.AppendLine("{");
+        sb.AppendLine($"    static {lib.Replace(".", "").Replace("-", "")}Config()");
+        sb.AppendLine("    {");
+        sb.AppendLine($"        NativeLibrary.SetDllImportResolver(typeof({lib.Replace(".", "").Replace("-", "")}Config).Assembly, (name, _, _) =>");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            if (name != \"{lib}\") return IntPtr.Zero;");
+        sb.AppendLine("            string ext = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? \".dll\"");
+        sb.AppendLine("                       : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)     ? \".dylib\"");
+        sb.AppendLine("                       : \".so\";");
+        sb.AppendLine("            return NativeLibrary.Load(Path.Combine(AppContext.BaseDirectory, name + ext));");
+        sb.AppendLine("        });");
+        sb.AppendLine("    }");
         sb.AppendLine("}");
         sb.AppendLine();
     }

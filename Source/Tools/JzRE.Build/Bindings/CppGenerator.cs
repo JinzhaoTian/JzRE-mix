@@ -52,6 +52,7 @@ public class CppGenerator
         // Managed vtable infrastructure (virtual dispatch C++ ← C#)
         foreach (var cls in _module.AllClasses)
         {
+            if (cls.IsStaticClass) continue;
             var virtuals = cls.Methods.Where(m => m.IsVirtual).ToList();
             if (virtuals.Count == 0) continue;
 
@@ -64,7 +65,7 @@ public class CppGenerator
         // Managed peer factory (native → managed peer creation)
         foreach (var cls in _module.AllClasses)
         {
-            if (!cls.NeedsManagedPeer) continue;
+            if (cls.IsStaticClass || !cls.NeedsManagedPeer) continue;
 
             sb.AppendLine($"// ── Managed peer factory: {cls.Name} (native creates managed wrapper) ────────");
             sb.AppendLine();
@@ -105,6 +106,7 @@ public class CppGenerator
                 any = true;
             }
 
+            if (cls.IsStaticClass) continue;
             var virtuals = cls.Methods.Where(m => m.IsVirtual).ToList();
             if (virtuals.Count == 0 && !cls.NeedsManagedPeer) continue;
 

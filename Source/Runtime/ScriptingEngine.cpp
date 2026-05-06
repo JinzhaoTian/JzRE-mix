@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <cstdint>
 
-// ── ScriptingEngine implementation ───────────────────────────────────────────
+// ── ScriptingEngine singleton ───────────────────────────────────────────────
 
 ScriptingEngine& ScriptingEngine::Get()
 {
@@ -12,7 +12,31 @@ ScriptingEngine& ScriptingEngine::Get()
     return instance;
 }
 
-void ScriptingEngine::Initialize()
+// ── Static API (P/Invoke boundary) ──────────────────────────────────────────
+
+void ScriptingEngine::Init()
+{
+    Get().InitializeImpl();
+}
+
+void ScriptingEngine::Update(float deltaTime)
+{
+    Get().UpdateImpl(deltaTime);
+}
+
+void ScriptingEngine::Shutdown()
+{
+    Get().ShutdownImpl();
+}
+
+void ScriptingEngine::RegisterInteropCallbacks(void* freeGCHandle_fn, void* log_fn)
+{
+    Get().RegisterInteropCallbacksImpl(freeGCHandle_fn, log_fn);
+}
+
+// ── Instance implementation ─────────────────────────────────────────────────
+
+void ScriptingEngine::InitializeImpl()
 {
     if (_initialized) return;
 
@@ -24,7 +48,7 @@ void ScriptingEngine::Initialize()
     std::fprintf(stderr, "[ScriptingEngine] Initialized.\n");
 }
 
-void ScriptingEngine::Update(float deltaTime)
+void ScriptingEngine::UpdateImpl(float deltaTime)
 {
     if (!_initialized) return;
 
@@ -42,7 +66,7 @@ void ScriptingEngine::Update(float deltaTime)
     }
 }
 
-void ScriptingEngine::Shutdown()
+void ScriptingEngine::ShutdownImpl()
 {
     if (!_initialized) return;
 

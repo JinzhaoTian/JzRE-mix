@@ -115,6 +115,13 @@ public class ClassInfo : ApiTypeInfo
     /// </summary>
     public bool NeedsManagedPeer = true;
 
+    /// <summary>
+    /// When true (set via API_CLASS(Static) annotation), the class contains only
+    /// static methods and is not part of the JzObject hierarchy.  Generators skip
+    /// the managed peer factory, managed vtable, and Object base class.
+    /// </summary>
+    public bool IsStaticClass = false;
+
     public ClassInfo() { ManagedBaseType = "Object"; }
 }
 

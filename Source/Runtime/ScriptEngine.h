@@ -8,6 +8,9 @@
 //
 // API_CLASS(Static) + API_FUNCTION() static methods form the P/Invoke boundary;
 // the bindings generator produces the C++ glue and C# partial class automatically.
+//
+// Logging is handled separately by Logger (see Logger.h); only FreeGCHandle
+// needs to be registered here.
 
 API_CLASS(Static)
 class ScriptEngine
@@ -22,7 +25,7 @@ public:
     API_FUNCTION() static void Init();
     API_FUNCTION() static void Update(float deltaTime);
     API_FUNCTION() static void Shutdown();
-    API_FUNCTION() static void RegisterInteropCallbacks(void* freeGCHandle_fn, void* log_fn);
+    API_FUNCTION() static void RegisterInteropCallbacks(void* freeGCHandle_fn);
 
     // ── Internal (non-API) ────────────────────────────────────────────
 
@@ -46,20 +49,18 @@ public:
     // ── Managed interop callbacks ────────────────────────────────────
 
     typedef void (*FreeGCHandleFn)(void* gcHandle);
-    typedef void (*LogFn)(int level, const char* message);
 
     FreeGCHandleFn GetFreeGCHandle() const { return _interop.FreeGCHandle; }
 
 private:
     ScriptEngine() = default;
 
-    void RegisterInteropCallbacksImpl(void* freeGCHandleFn, void* logFn)
+    void RegisterInteropCallbacksImpl(void* freeGCHandleFn)
     {
         _interop.FreeGCHandle = reinterpret_cast<FreeGCHandleFn>(freeGCHandleFn);
-        _interop.Log          = reinterpret_cast<LogFn>(logFn);
     }
 
-    struct InteropCallbacks { FreeGCHandleFn FreeGCHandle = nullptr; LogFn Log = nullptr; };
+    struct InteropCallbacks { FreeGCHandleFn FreeGCHandle = nullptr; };
     InteropCallbacks _interop;
 
     // Instance methods (called by static API wrappers)

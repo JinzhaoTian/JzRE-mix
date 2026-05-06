@@ -35,7 +35,7 @@ void Object::DestroyManaged()
     {
         s_managedToNative.erase(_gcHandle);
         // The GCHandle itself is freed by the managed side (Object.Dispose)
-        // or by the native interop bridge (NativeInterop.FreeGCHandle).
+        // or by the native interop bridge (GCHandleInterop.FreeGCHandle).
         _gcHandle = nullptr;
     }
 }

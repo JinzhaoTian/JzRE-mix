@@ -1,7 +1,7 @@
 #include "ScriptEngine.h"
+#include "Logger.h"
 #include "JzRE.Runtime.Bindings.Gen.h"
 #include <algorithm>
-#include <cstdio>
 #include <cstdint>
 
 // ── ScriptEngine singleton ──────────────────────────────────────────────────
@@ -29,9 +29,9 @@ void ScriptEngine::Shutdown()
     Get().ShutdownImpl();
 }
 
-void ScriptEngine::RegisterInteropCallbacks(void* freeGCHandle_fn, void* log_fn)
+void ScriptEngine::RegisterInteropCallbacks(void* freeGCHandle_fn)
 {
-    Get().RegisterInteropCallbacksImpl(freeGCHandle_fn, log_fn);
+    Get().RegisterInteropCallbacksImpl(freeGCHandle_fn);
 }
 
 // ── Instance implementation ─────────────────────────────────────────────────
@@ -45,7 +45,7 @@ void ScriptEngine::InitializeImpl()
     _frameCount = 0;
     _initialized = true;
 
-    std::fprintf(stderr, "[ScriptEngine] Initialized.\n");
+    Logger::Info("[ScriptEngine] Initialized.");
 }
 
 void ScriptEngine::UpdateImpl(float deltaTime)
@@ -85,8 +85,7 @@ void ScriptEngine::ShutdownImpl()
     _scripts.clear();
     _initialized = false;
 
-    std::fprintf(stderr, "[ScriptEngine] Shutdown complete (frames: %llu).\n",
-                 (unsigned long long)_frameCount);
+    Logger::Info("[ScriptEngine] Shutdown complete.");
 }
 
 void ScriptEngine::RegisterScript(Script* script)

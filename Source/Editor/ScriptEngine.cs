@@ -10,10 +10,10 @@ public static partial class ScriptEngine
         unsafe
         {
             RegisterInteropCallbacks(
-                (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, void>)&NativeInterop.FreeGCHandle,
-                (IntPtr)(delegate* unmanaged[Cdecl]<int, IntPtr, void>)&NativeInterop.Log
+                (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, void>)&GarbageCollection.FreeGCHandle
             );
         }
+        Logger.RegisterManagedCallback();
         Init();
     }
 }

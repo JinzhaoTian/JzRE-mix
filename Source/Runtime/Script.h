@@ -15,7 +15,7 @@
 //   };
 
 API_CLASS()
-class Script : public JzObject
+class Script : public Object
 {
 public:
     Script();

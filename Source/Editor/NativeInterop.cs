@@ -3,7 +3,7 @@
 // (CreateManagedPeer callback + SetManagedPeerFactory in the .Gen.cs file).
 //
 // C# passes these as [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })] function pointers to
-// ScriptingEngine.RegisterInteropCallbacks before ScriptingEngine.Init.
+// ScriptEngine.RegisterInteropCallbacks before ScriptEngine.Init.
 
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;

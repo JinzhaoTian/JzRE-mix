@@ -2,8 +2,8 @@
 #include "API.h"
 #include <cstdint>
 
-// ── JzObject — root class of the engine object hierarchy ─────────────────────
-// Every engine object that has a managed (C#) peer derives from JzObject.
+// ── Object — root class of the engine object hierarchy ───────────────────────
+// Every engine object that has a managed (C#) peer derives from Object.
 // Mirrors FlaxEngine's ScriptingObject.
 //
 // Lifecycle:
@@ -14,19 +14,19 @@
 //                  created by ObjectInternal_Create and the GCHandle pins
 //                  the managed object.
 
-API_CLASS()
-class JzObject
+API_CLASS(Abstract)
+class Object
 {
 public:
-    JzObject();
-    virtual ~JzObject();
+    Object();
+    virtual ~Object();
 
-    JzObject(const JzObject&) = delete;
-    JzObject& operator=(const JzObject&) = delete;
+    Object(const Object&) = delete;
+    Object& operator=(const Object&) = delete;
 
     // ── Managed peer ─────────────────────────────────────────────────
 
-    API_PROPERTY()
+    API_FUNCTION()
     void* GetManagedInstance() const { return _gcHandle; }
 
     API_PROPERTY()
@@ -46,7 +46,7 @@ public:
     // ── Static helpers ───────────────────────────────────────────────
 
     API_FUNCTION()
-    static JzObject* FromManaged(void* managedObj);
+    static Object* FromManaged(void* managedObj);
 
     API_FUNCTION()
     void SetManagedInstance(void* gcHandle);
@@ -57,7 +57,7 @@ public:
 protected:
     void*       _gcHandle = nullptr;
     uint32_t    _objectId = 0;
-    const char* _typeName = "JzObject";
+    const char* _typeName = "Object";
 
 private:
     static uint32_t s_nextId;

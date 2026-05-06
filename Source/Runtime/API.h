@@ -7,7 +7,7 @@
 // expand to nothing — they exist purely for the header parser.
 //
 // Usage in C++ headers:
-//   API_CLASS() class MyObject : public JzObject { … };
+//   API_CLASS() class MyObject : public Object { … };
 //   API_STRUCT() struct MyData { int x, y; };
 //   API_ENUM() enum class MyEnum { A, B };
 //   API_EXPORT() void SomeExportedFunction();  // standalone C function

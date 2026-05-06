@@ -13,7 +13,6 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using JzRE;
-using JzRE.Scripting;
 
 namespace JzRE.Editor;
 
@@ -91,7 +90,7 @@ public partial class MainWindow : Window
             if (dt > 0.1f) dt = 0.1f;
 
             if (_scriptingInitialized)
-                ScriptingEngine.Update(dt);
+                ScriptEngine.Update(dt);
 
             RenderEngine.Render();
         };
@@ -104,7 +103,7 @@ public partial class MainWindow : Window
 
         if (_scriptingInitialized)
         {
-            ScriptingEngine.Shutdown();
+            ScriptEngine.Shutdown();
             _scriptingInitialized = false;
         }
 
@@ -142,7 +141,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!RenderEngine.Create(hostHandle, 0, 0, (int)bounds.Width, (int)bounds.Height))
+        if (!RenderEngine.Initialize(hostHandle, (int)bounds.Width, (int)bounds.Height))
         {
             ShowErrorDialog("Failed to initialize render engine:\n\n" +
                             RenderEngine.GetLastError());
@@ -156,14 +155,7 @@ public partial class MainWindow : Window
         // Initialize the scripting engine after the renderer is ready
         if (!_scriptingInitialized)
         {
-            unsafe
-            {
-                ScriptingEngine.RegisterInteropCallbacks(
-                    (IntPtr)(delegate* unmanaged[Cdecl]<IntPtr, void>)&NativeInterop.FreeGCHandle,
-                    (IntPtr)(delegate* unmanaged[Cdecl]<int, IntPtr, void>)&NativeInterop.Log
-                );
-            }
-            ScriptingEngine.Init();
+            ScriptEngine.Initialize();
             _scriptingInitialized = true;
         }
 

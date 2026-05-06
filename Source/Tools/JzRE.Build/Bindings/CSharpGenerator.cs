@@ -97,9 +97,19 @@ public class CSharpGenerator
         }
         else
         {
-            var baseDecl = cls.ManagedBaseType != null ? $" : {cls.ManagedBaseType}" : "";
-            sb.AppendLine($"public partial class {cls.Name}{baseDecl}");
+            if (cls.IsAbstract)
+            {
+                sb.AppendLine($"public abstract partial class {cls.Name} : IDisposable");
+            }
+            else
+            {
+                var baseDecl = cls.ManagedBaseType != null ? $" : {cls.ManagedBaseType}" : "";
+                sb.AppendLine($"public partial class {cls.Name}{baseDecl}");
+            }
             sb.AppendLine("{");
+
+            if (cls.IsAbstract)
+                EmitAbstractClassInfrastructure(sb, cls);
 
             // ── nested InternalCalls ──
             sb.AppendLine("    private static partial class InternalCalls");
@@ -510,4 +520,59 @@ public class CSharpGenerator
         _ when t.TrimEnd().EndsWith('*') => "IntPtr",
         _ => t.Trim(),
     };
+
+    // ── Abstract class infrastructure ─────────────────────────────────────────
+    // Emitted for API_CLASS(Abstract) root classes.  Generates the managed-object
+    // fields, lifecycle helpers, and IDisposable implementation so the hand-written
+    // partial file is no longer needed.
+
+    private static void EmitAbstractClassInfrastructure(StringBuilder sb, ClassInfo cls)
+    {
+        sb.AppendLine("    // ── Managed object infrastructure ─────────────────────────────────────────");
+        sb.AppendLine("    internal IntPtr __unmanagedPtr;");
+        sb.AppendLine("    internal uint __internalId;");
+        sb.AppendLine("    internal GCHandle __gcHandle;");
+        sb.AppendLine("    public bool IsDisposed { get; private set; }");
+        sb.AppendLine();
+        sb.AppendLine("    internal void SetInternalValues(IntPtr unmanagedPtr, uint id)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        __unmanagedPtr = unmanagedPtr;");
+        sb.AppendLine("        __internalId = id;");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine($"    public static {cls.Name}? FromUnmanagedPtr(IntPtr ptr)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (ptr == IntPtr.Zero) return null;");
+        sb.AppendLine("        var handle = InternalCalls.GetManagedInstance(ptr);");
+        sb.AppendLine("        if (handle == IntPtr.Zero) return null;");
+        sb.AppendLine($"        return GCHandle.FromIntPtr(handle).Target as {cls.Name};");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine($"    public static IntPtr GetUnmanagedPtr({cls.Name}? obj)");
+        sb.AppendLine("        => obj?.__unmanagedPtr ?? IntPtr.Zero;");
+        sb.AppendLine();
+        sb.AppendLine("    public void Dispose()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (IsDisposed) return;");
+        sb.AppendLine("        IsDisposed = true;");
+        sb.AppendLine("        if (__unmanagedPtr != IntPtr.Zero)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            InternalCalls.DestroyManaged(__unmanagedPtr);");
+        sb.AppendLine("            __unmanagedPtr = IntPtr.Zero;");
+        sb.AppendLine("        }");
+        sb.AppendLine("        if (__gcHandle.IsAllocated)");
+        sb.AppendLine("            __gcHandle.Free();");
+        sb.AppendLine("        GC.SuppressFinalize(this);");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        sb.AppendLine($"    ~{cls.Name}()");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (!IsDisposed)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (__unmanagedPtr != IntPtr.Zero)");
+        sb.AppendLine("                InternalCalls.OnManagedInstanceDeleted(__unmanagedPtr);");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+    }
 }

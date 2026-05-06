@@ -1,42 +1,42 @@
-#include "ScriptingEngine.h"
+#include "ScriptEngine.h"
 #include "JzRE.Runtime.Bindings.Gen.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
 
-// ── ScriptingEngine singleton ───────────────────────────────────────────────
+// ── ScriptEngine singleton ──────────────────────────────────────────────────
 
-ScriptingEngine& ScriptingEngine::Get()
+ScriptEngine& ScriptEngine::Get()
 {
-    static ScriptingEngine instance;
+    static ScriptEngine instance;
     return instance;
 }
 
 // ── Static API (P/Invoke boundary) ──────────────────────────────────────────
 
-void ScriptingEngine::Init()
+void ScriptEngine::Init()
 {
     Get().InitializeImpl();
 }
 
-void ScriptingEngine::Update(float deltaTime)
+void ScriptEngine::Update(float deltaTime)
 {
     Get().UpdateImpl(deltaTime);
 }
 
-void ScriptingEngine::Shutdown()
+void ScriptEngine::Shutdown()
 {
     Get().ShutdownImpl();
 }
 
-void ScriptingEngine::RegisterInteropCallbacks(void* freeGCHandle_fn, void* log_fn)
+void ScriptEngine::RegisterInteropCallbacks(void* freeGCHandle_fn, void* log_fn)
 {
     Get().RegisterInteropCallbacksImpl(freeGCHandle_fn, log_fn);
 }
 
 // ── Instance implementation ─────────────────────────────────────────────────
 
-void ScriptingEngine::InitializeImpl()
+void ScriptEngine::InitializeImpl()
 {
     if (_initialized) return;
 
@@ -45,10 +45,10 @@ void ScriptingEngine::InitializeImpl()
     _frameCount = 0;
     _initialized = true;
 
-    std::fprintf(stderr, "[ScriptingEngine] Initialized.\n");
+    std::fprintf(stderr, "[ScriptEngine] Initialized.\n");
 }
 
-void ScriptingEngine::UpdateImpl(float deltaTime)
+void ScriptEngine::UpdateImpl(float deltaTime)
 {
     if (!_initialized) return;
 
@@ -66,7 +66,7 @@ void ScriptingEngine::UpdateImpl(float deltaTime)
     }
 }
 
-void ScriptingEngine::ShutdownImpl()
+void ScriptEngine::ShutdownImpl()
 {
     if (!_initialized) return;
 
@@ -85,11 +85,11 @@ void ScriptingEngine::ShutdownImpl()
     _scripts.clear();
     _initialized = false;
 
-    std::fprintf(stderr, "[ScriptingEngine] Shutdown complete (frames: %llu).\n",
+    std::fprintf(stderr, "[ScriptEngine] Shutdown complete (frames: %llu).\n",
                  (unsigned long long)_frameCount);
 }
 
-void ScriptingEngine::RegisterScript(Script* script)
+void ScriptEngine::RegisterScript(Script* script)
 {
     if (!script) return;
 
@@ -104,7 +104,7 @@ void ScriptingEngine::RegisterScript(Script* script)
     script->OnEnable();
 }
 
-void ScriptingEngine::UnregisterScript(Script* script)
+void ScriptEngine::UnregisterScript(Script* script)
 {
     if (!script) return;
     auto it = std::find(_scripts.begin(), _scripts.end(), script);
@@ -115,7 +115,7 @@ void ScriptingEngine::UnregisterScript(Script* script)
     }
 }
 
-Script* ScriptingEngine::FindScript(uint32_t objectId) const
+Script* ScriptEngine::FindScript(uint32_t objectId) const
 {
     for (auto* s : _scripts)
     {

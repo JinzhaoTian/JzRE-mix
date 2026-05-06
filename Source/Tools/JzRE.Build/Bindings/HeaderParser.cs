@@ -229,16 +229,18 @@ public sealed class HeaderParser
         if (tok.Peek().Kind != TK.Ident) return;
         var name = tok.Next().Text;
 
-        var isStatic = attrs.Any(a => a.Equals("Static", StringComparison.OrdinalIgnoreCase));
+        var isStatic   = attrs.Any(a => a.Equals("Static",   StringComparison.OrdinalIgnoreCase));
+        var isAbstract = attrs.Any(a => a.Equals("Abstract", StringComparison.OrdinalIgnoreCase));
 
         var cls = new ClassInfo
         {
-            Name           = name,
-            Namespace      = _namespace,
-            NativeModule   = _moduleName,
-            Attributes     = attrs,
-            IsStaticClass  = isStatic,
-            NeedsManagedPeer = !isStatic,
+            Name             = name,
+            Namespace        = _namespace,
+            NativeModule     = _moduleName,
+            Attributes       = attrs,
+            IsStaticClass    = isStatic,
+            IsAbstract       = isAbstract,
+            NeedsManagedPeer = !isStatic && !isAbstract,
         };
 
         // optional base class:  : public BaseClass

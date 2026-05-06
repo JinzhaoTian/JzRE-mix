@@ -1,36 +1,35 @@
 #include "Object.h"
 #include <unordered_map>
-#include <cstdlib>
 
 // ── Global object registry ────────────────────────────────────────────────────
-// Maps managed GCHandle → native JzObject*.  This allows the internal call
+// Maps managed GCHandle → native Object*.  This allows the internal call
 // layer to resolve a native pointer from the managed peer.
 //
 // In a full engine this would be integrated with the Scripting service;
 // for Phase 2 a simple static map suffices.
 
-static std::unordered_map<void*, JzObject*> s_managedToNative;
+static std::unordered_map<void*, Object*> s_managedToNative;
 
-uint32_t JzObject::s_nextId = 1;
+uint32_t Object::s_nextId = 1;
 
-JzObject::JzObject()
+Object::Object()
     : _objectId(s_nextId++)
 {
 }
 
-JzObject::~JzObject()
+Object::~Object()
 {
     DestroyManaged();
 }
 
-void JzObject::SetManagedInstance(void* gcHandle)
+void Object::SetManagedInstance(void* gcHandle)
 {
     _gcHandle = gcHandle;
     if (gcHandle)
         s_managedToNative[gcHandle] = this;
 }
 
-void JzObject::DestroyManaged()
+void Object::DestroyManaged()
 {
     if (_gcHandle)
     {
@@ -41,7 +40,7 @@ void JzObject::DestroyManaged()
     }
 }
 
-void JzObject::OnManagedInstanceDeleted()
+void Object::OnManagedInstanceDeleted()
 {
     // The managed peer is gone — clear our reference but don't free the
     // handle (C# already did).  Subclasses may override for cleanup.
@@ -52,30 +51,9 @@ void JzObject::OnManagedInstanceDeleted()
     }
 }
 
-JzObject* JzObject::FromManaged(void* managedObj)
+Object* Object::FromManaged(void* managedObj)
 {
     auto it = s_managedToNative.find(managedObj);
     return it != s_managedToNative.end() ? it->second : nullptr;
 }
 
-// ── Exported C API (P/Invoke boundary) ─────────────────────────────────────
-
-API_EXPORT() void ObjectInternal_Destroy(void* obj, float /*timeLeft*/)
-{
-    if (!obj) return;
-    auto* native = static_cast<JzObject*>(obj);
-    native->OnManagedInstanceDeleted();
-    delete native;
-}
-
-API_EXPORT() void* ObjectInternal_FindObject(void* nativePtr)
-{
-    if (!nativePtr) return nullptr;
-    return static_cast<JzObject*>(nativePtr)->GetManagedInstance();
-}
-
-API_EXPORT() void ObjectInternal_ManagedInstanceDeleted(void* obj)
-{
-    if (!obj) return;
-    static_cast<JzObject*>(obj)->OnManagedInstanceDeleted();
-}

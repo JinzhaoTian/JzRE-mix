@@ -117,10 +117,18 @@ public class ClassInfo : ApiTypeInfo
 
     /// <summary>
     /// When true (set via API_CLASS(Static) annotation), the class contains only
-    /// static methods and is not part of the JzObject hierarchy.  Generators skip
+    /// static methods and is not part of the Object hierarchy.  Generators skip
     /// the managed peer factory, managed vtable, and Object base class.
     /// </summary>
     public bool IsStaticClass = false;
+
+    /// <summary>
+    /// When true (set via API_CLASS(Abstract) annotation), the class cannot be
+    /// directly instantiated.  Generators skip the managed peer factory and
+    /// suppress the base-class declaration in the generated partial (since the
+    /// hand-written partial already carries the full base-class hierarchy).
+    /// </summary>
+    public bool IsAbstract = false;
 
     public ClassInfo() { ManagedBaseType = "Object"; }
 }

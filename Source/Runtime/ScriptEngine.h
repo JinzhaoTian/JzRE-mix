@@ -2,7 +2,7 @@
 #include "Script.h"
 #include <vector>
 
-// ── ScriptingEngine — manages the script lifecycle ─────────────────────────
+// ── ScriptEngine — manages the script lifecycle ─────────────────────────────
 // Mirrors FlaxEngine's ScriptingService.  Owns the list of active Script
 // objects and invokes their lifecycle methods each frame.
 //
@@ -10,12 +10,12 @@
 // the bindings generator produces the C++ glue and C# partial class automatically.
 
 API_CLASS(Static)
-class ScriptingEngine
+class ScriptEngine
 {
 public:
     // ── Singleton ────────────────────────────────────────────────────
 
-    static ScriptingEngine& Get();
+    static ScriptEngine& Get();
 
     // ── P/Invoke API (generated glue calls these) ────────────────────
 
@@ -51,7 +51,7 @@ public:
     FreeGCHandleFn GetFreeGCHandle() const { return _interop.FreeGCHandle; }
 
 private:
-    ScriptingEngine() = default;
+    ScriptEngine() = default;
 
     void RegisterInteropCallbacksImpl(void* freeGCHandleFn, void* logFn)
     {
